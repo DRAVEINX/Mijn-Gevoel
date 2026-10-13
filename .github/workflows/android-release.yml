@@ -59,8 +59,8 @@ jobs:
           set -euo pipefail
           project='source/MijnGevoel-Android/MijnGevoel.Android/MijnGevoel.Android.csproj'
           grep -q '<TargetFramework>net10.0-android</TargetFramework>' "$project"
-          grep -q '<ApplicationDisplayVersion>1.0.4</ApplicationDisplayVersion>' "$project"
-          grep -q '<ApplicationVersion>5</ApplicationVersion>' "$project"
+          grep -q '<ApplicationDisplayVersion>1.0.6</ApplicationDisplayVersion>' "$project"
+          grep -q '<ApplicationVersion>7</ApplicationVersion>' "$project"
           grep -q 'SkiaSharp" Version="3.119.4"' "$project"
           grep -q 'SkiaSharp.NativeAssets.Android" Version="3.119.4"' "$project"
 
