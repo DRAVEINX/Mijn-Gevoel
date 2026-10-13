@@ -59,8 +59,8 @@ jobs:
           set -euo pipefail
           project='source/MijnGevoel-Android/MijnGevoel.Android/MijnGevoel.Android.csproj'
           grep -q '<TargetFramework>net10.0-android</TargetFramework>' "$project"
-          grep -q '<ApplicationDisplayVersion>1.0.8</ApplicationDisplayVersion>' "$project"
-          grep -q '<ApplicationVersion>9</ApplicationVersion>' "$project"
+          grep -q '<ApplicationDisplayVersion>1.0.9</ApplicationDisplayVersion>' "$project"
+          grep -q '<ApplicationVersion>10</ApplicationVersion>' "$project"
           grep -q 'Xamarin.AndroidX.Biometric" Version="1.1.0.33"' "$project"
           grep -q 'Plugin.Maui.Audio" Version="4.0.0"' "$project"
 
