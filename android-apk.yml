@@ -1,0 +1,84 @@
+name: Mijn Gevoel - Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'MijnGevoel-Android-compleet.zip'
+      - '.github/workflows/android-apk.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Haal repository op
+        uses: actions/checkout@v4
+
+      - name: Controleer de ZIP
+        run: |
+          set -euo pipefail
+          test -f "MijnGevoel-Android-compleet.zip"
+          unzip -t "MijnGevoel-Android-compleet.zip"
+
+      - name: Pak het project uit
+        run: |
+          set -euo pipefail
+          mkdir -p source
+          unzip -q "MijnGevoel-Android-compleet.zip" -d source
+          test -f source/MijnGevoel-Android/MijnGevoel.Android/MijnGevoel.Android.csproj
+          test -f source/MijnGevoel-Android/MijnGevoel.Core/MijnGevoel.Core.csproj
+          test -f source/MijnGevoel-Android/MijnGevoel.Tests/MijnGevoel.Tests.csproj
+
+      - name: Installeer .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Installeer Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: microsoft
+          java-version: '17'
+
+      - name: Installeer Android workload
+        run: dotnet workload install maui-android
+
+      - name: Herstel en voer tests uit
+        working-directory: source/MijnGevoel-Android
+        run: |
+          dotnet restore MijnGevoel.Tests/MijnGevoel.Tests.csproj
+          dotnet test MijnGevoel.Tests/MijnGevoel.Tests.csproj --configuration Release --no-restore --logger "console;verbosity=normal"
+
+      - name: Bouw Android APK
+        working-directory: source/MijnGevoel-Android
+        run: dotnet publish MijnGevoel.Android/MijnGevoel.Android.csproj --configuration Debug --framework net8.0-android -p:AndroidPackageFormat=apk
+
+      - name: Vind APK en maak SHA-256
+        shell: bash
+        working-directory: source/MijnGevoel-Android
+        run: |
+          set -euo pipefail
+          mkdir -p ../../artifacts
+          apk="$(find MijnGevoel.Android/bin/Debug/net8.0-android -type f -name '*.apk' -printf '%T@ %p\n' | sort -nr | head -n 1 | cut -d' ' -f2-)"
+          if [[ -z "${apk}" || ! -f "${apk}" ]]; then
+            echo "De build heeft geen APK opgeleverd." >&2
+            find MijnGevoel.Android/bin/Debug/net8.0-android -maxdepth 5 -type f -print || true
+            exit 1
+          fi
+          cp "${apk}" ../../artifacts/MijnGevoel-Android-debug.apk
+          cd ../../artifacts
+          sha256sum MijnGevoel-Android-debug.apk | tee SHA256SUMS.txt
+          ls -lh
+
+      - name: Publiceer APK als download
+        uses: actions/upload-artifact@v4
+        with:
+          name: MijnGevoel-Android-debug-apk
+          path: |
+            artifacts/MijnGevoel-Android-debug.apk
+            artifacts/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 14
