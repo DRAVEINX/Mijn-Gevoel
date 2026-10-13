@@ -35,7 +35,9 @@ jobs:
       - name: Installeer .NET 8
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '8.0.x'
+          dotnet-version: |
+            8.0.x
+            10.0.x
 
       - name: Installeer Java 17
         uses: actions/setup-java@v4
@@ -52,9 +54,17 @@ jobs:
           dotnet restore MijnGevoel.Tests/MijnGevoel.Tests.csproj
           dotnet test MijnGevoel.Tests/MijnGevoel.Tests.csproj --configuration Release --no-restore --logger "console;verbosity=normal"
 
+      - name: Zet Android-project op ondersteunde .NET 10 target
+        shell: bash
+        run: |
+          set -euo pipefail
+          project='source/MijnGevoel-Android/MijnGevoel.Android/MijnGevoel.Android.csproj'
+          sed -i 's#<TargetFramework>net8.0-android</TargetFramework>#<TargetFramework>net10.0-android</TargetFramework>#' "$project"
+          grep -q '<TargetFramework>net10.0-android</TargetFramework>' "$project"
+
       - name: Bouw Android APK
         working-directory: source/MijnGevoel-Android
-        run: dotnet publish MijnGevoel.Android/MijnGevoel.Android.csproj --configuration Debug --framework net8.0-android -p:AndroidPackageFormat=apk
+        run: dotnet publish MijnGevoel.Android/MijnGevoel.Android.csproj --configuration Debug --framework net10.0-android -p:AndroidPackageFormat=apk
 
       - name: Vind APK en maak SHA-256
         shell: bash
@@ -62,10 +72,10 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p ../../artifacts
-          apk="$(find MijnGevoel.Android/bin/Debug/net8.0-android -type f -name '*.apk' -printf '%T@ %p\n' | sort -nr | head -n 1 | cut -d' ' -f2-)"
+          apk="$(find MijnGevoel.Android/bin/Debug/net10.0-android -type f -name '*.apk' -printf '%T@ %p\n' | sort -nr | head -n 1 | cut -d' ' -f2-)"
           if [[ -z "${apk}" || ! -f "${apk}" ]]; then
             echo "De build heeft geen APK opgeleverd." >&2
-            find MijnGevoel.Android/bin/Debug/net8.0-android -maxdepth 5 -type f -print || true
+            find MijnGevoel.Android/bin/Debug/net10.0-android -maxdepth 5 -type f -print || true
             exit 1
           fi
           cp "${apk}" ../../artifacts/MijnGevoel-Android-debug.apk
