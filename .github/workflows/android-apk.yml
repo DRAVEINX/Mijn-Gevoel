@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Haal repository op
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Zoek en controleer de Android-ZIP
         shell: bash
@@ -41,14 +41,14 @@ jobs:
           test -f source/MijnGevoel-Android/MijnGevoel.Tests/MijnGevoel.Tests.csproj
 
       - name: Installeer .NET SDK's
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: |
             8.0.x
             10.0.x
 
       - name: Installeer Java 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: microsoft
           java-version: '17'
@@ -90,7 +90,7 @@ jobs:
           sha256sum MijnGevoel-Android-debug.apk | tee SHA256SUMS.txt
 
       - name: Maak APK downloadbaar
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: MijnGevoel-Android-debug-apk
           path: |
