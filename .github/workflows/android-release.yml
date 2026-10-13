@@ -8,7 +8,7 @@ permissions:
 
 jobs:
   release:
-    name: Test and build signed release APK
+    name: Test and build signed APK and Google Play bundle
     runs-on: ubuntu-latest
     steps:
       - name: Haal repository op
@@ -59,10 +59,10 @@ jobs:
           set -euo pipefail
           project='source/MijnGevoel-Android/MijnGevoel.Android/MijnGevoel.Android.csproj'
           grep -q '<TargetFramework>net10.0-android</TargetFramework>' "$project"
-          grep -q '<ApplicationDisplayVersion>1.0.6</ApplicationDisplayVersion>' "$project"
-          grep -q '<ApplicationVersion>7</ApplicationVersion>' "$project"
-          grep -q 'SkiaSharp" Version="3.119.4"' "$project"
-          grep -q 'SkiaSharp.NativeAssets.Android" Version="3.119.4"' "$project"
+          grep -q '<ApplicationDisplayVersion>1.0.7</ApplicationDisplayVersion>' "$project"
+          grep -q '<ApplicationVersion>8</ApplicationVersion>' "$project"
+          grep -q 'Xamarin.AndroidX.Biometric" Version="1.1.0.33"' "$project"
+          grep -q 'Plugin.Maui.Audio" Version="4.0.0"' "$project"
 
       - name: Voer tests uit
         working-directory: source/MijnGevoel-Android
@@ -107,33 +107,64 @@ jobs:
             -p:AndroidSigningKeyPass=env:ANDROID_KEY_PASSWORD \
             -p:AndroidSigningStorePass=env:ANDROID_KEYSTORE_PASSWORD
 
-      - name: Controleer APK en maak checksum
+      - name: Bewaar APK als releasebestand
         shell: bash
         working-directory: source/MijnGevoel-Android
         run: |
           set -euo pipefail
-          mkdir -p ../../artifacts
           output='MijnGevoel.Android/bin/Release/net10.0-android'
-          apk="$(find "$output" -type f -iname '*-signed.apk' -printf '%T@ %p\n' | sort -nr | head -n 1 | cut -d' ' -f2-)"
-          if [[ -z "$apk" ]]; then
-            apk="$(find "$output" -type f -name '*.apk' -printf '%T@ %p\n' | sort -nr | head -n 1 | cut -d' ' -f2-)"
-          fi
+          apk="$(find "$output" -type f -iname '*.apk' -printf '%T@ %p\n' | sort -nr | head -n 1 | cut -d' ' -f2-)"
           if [[ -z "$apk" || ! -f "$apk" ]]; then
             echo "De Release-build heeft geen APK opgeleverd." >&2
             find "$output" -maxdepth 6 -type f -print || true
             exit 1
           fi
+          mkdir -p ../../artifacts
           cp "$apk" ../../artifacts/MijnGevoel-Android-release.apk
+
+      - name: Bouw ondertekende Google Play App Bundle
+        working-directory: source/MijnGevoel-Android
+        shell: bash
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          set -euo pipefail
+          dotnet publish MijnGevoel.Android/MijnGevoel.Android.csproj \
+            --configuration Release \
+            --framework net10.0-android \
+            -p:AndroidPackageFormat=aab \
+            -p:AndroidKeyStore=true \
+            "-p:AndroidSigningKeyStore=$RUNNER_TEMP/mijngevoel-release.keystore" \
+            "-p:AndroidSigningKeyAlias=$ANDROID_KEY_ALIAS" \
+            -p:AndroidSigningKeyPass=env:ANDROID_KEY_PASSWORD \
+            -p:AndroidSigningStorePass=env:ANDROID_KEYSTORE_PASSWORD
+
+      - name: Controleer AAB, maak checksums
+        shell: bash
+        working-directory: source/MijnGevoel-Android
+        run: |
+          set -euo pipefail
+          output='MijnGevoel.Android/bin/Release/net10.0-android'
+          aab="$(find "$output" -type f -iname '*.aab' -printf '%T@ %p\n' | sort -nr | head -n 1 | cut -d' ' -f2-)"
+          if [[ -z "$aab" || ! -f "$aab" ]]; then
+            echo "De Release-build heeft geen AAB opgeleverd." >&2
+            find "$output" -maxdepth 6 -type f -print || true
+            exit 1
+          fi
+          cp "$aab" ../../artifacts/MijnGevoel-Android-release.aab
           cd ../../artifacts
-          sha256sum MijnGevoel-Android-release.apk | tee SHA256SUMS.txt
+          sha256sum MijnGevoel-Android-release.apk MijnGevoel-Android-release.aab | tee SHA256SUMS.txt
           ls -lh
 
-      - name: Upload ondertekende Release-APK
+      - name: Upload APK, AAB en checksums
         uses: actions/upload-artifact@v7
         with:
           name: MijnGevoel-Android-release-apk
           path: |
             artifacts/MijnGevoel-Android-release.apk
+            artifacts/MijnGevoel-Android-release.aab
             artifacts/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 30
