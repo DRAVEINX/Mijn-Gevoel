@@ -1,4 +1,4 @@
-name: Mijn Gevoel - Android Release
+name: Mijn Gevoel 2.0 - Android Release
 
 on:
   workflow_dispatch:
@@ -18,9 +18,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          zip_file="$(find . -maxdepth 1 -type f -name 'MijnGevoel-Android-compleet*.zip' -printf '%f\n' | sort -V | tail -n 1)"
-          if [[ -z "$zip_file" ]]; then
-            echo "Geen MijnGevoel-Android-compleet*.zip gevonden in de hoofdmap." >&2
+          # Gebruik bewust exact de 2.0-broncode, ook als oudere ZIP-bestanden blijven staan.
+          zip_file='MijnGevoel-Android-compleet-2.0.zip'
+          if [[ ! -f "$zip_file" ]]; then
+            echo "Bestand $zip_file ontbreekt in de hoofdmap. Upload eerst het 2.0-broncodepakket." >&2
             exit 1
           fi
           echo "Bronbestand: $zip_file"
@@ -59,8 +60,8 @@ jobs:
           set -euo pipefail
           project='source/MijnGevoel-Android/MijnGevoel.Android/MijnGevoel.Android.csproj'
           grep -q '<TargetFramework>net10.0-android</TargetFramework>' "$project"
-          grep -q '<ApplicationDisplayVersion>1.0.9</ApplicationDisplayVersion>' "$project"
-          grep -q '<ApplicationVersion>10</ApplicationVersion>' "$project"
+          grep -q '<ApplicationDisplayVersion>2.0</ApplicationDisplayVersion>' "$project"
+          grep -q '<ApplicationVersion>20</ApplicationVersion>' "$project"
           grep -q 'Xamarin.AndroidX.Biometric" Version="1.1.0.33"' "$project"
           grep -q 'Plugin.Maui.Audio" Version="4.0.0"' "$project"
 
