@@ -1,0 +1,92 @@
+name: MoodPress iOS - simulator build
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'MoodPress-iOS-compleet-2.3.1.zip'
+      - '.github/workflows/moodpress-ios-build.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build-ios-simulator:
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Validate source archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive='MoodPress-iOS-compleet-2.3.1.zip'
+          test -f "$archive" || { echo "Upload $archive to the repository root first." >&2; exit 1; }
+          unzip -t "$archive"
+          mkdir -p source
+          unzip -q "$archive" -d source
+          project='source/MijnGevoel-Android/MijnGevoel.Android/MoodPress.iOS.csproj'
+          test -f "$project"
+          test -f source/MijnGevoel-Android/MijnGevoel.Android/Platforms/iOS/Info.plist
+          test -f source/MijnGevoel-Android/MijnGevoel.Core/MijnGevoel.Core.csproj
+          test -f source/MijnGevoel-Android/MijnGevoel.Tests/MijnGevoel.Tests.csproj
+          grep -q '<TargetFramework>net10.0-ios</TargetFramework>' "$project"
+          grep -q '<ApplicationDisplayVersion>2.3.1</ApplicationDisplayVersion>' "$project"
+          grep -q '<ApplicationVersion>28</ApplicationVersion>' "$project"
+          grep -q '<ApplicationTitle>MoodPress</ApplicationTitle>' "$project"
+          grep -q 'NSFaceIDUsageDescription' source/MijnGevoel-Android/MijnGevoel.Android/Platforms/iOS/Info.plist
+          echo 'iOS project, privacy strings and version passed pre-build checks.'
+
+      - name: Set up .NET SDKs
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - name: Show Apple build environment
+        run: |
+          xcodebuild -version
+          dotnet --list-sdks
+          dotnet --info
+
+      - name: Run shared Core tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet test source/MijnGevoel-Android/MijnGevoel.Tests/MijnGevoel.Tests.csproj --configuration Release --logger "console;verbosity=normal"
+
+      - name: Install .NET MAUI iOS workload
+        run: dotnet workload install maui-ios
+
+      - name: Build for iOS Simulator (unsigned)
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd source/MijnGevoel-Android/MijnGevoel.Android
+          if [[ "$(uname -m)" == "arm64" ]]; then
+            RID='iossimulator-arm64'
+          else
+            RID='iossimulator-x64'
+          fi
+          dotnet build MoodPress.iOS.csproj \
+            --configuration Debug \
+            --framework net10.0-ios \
+            -p:RuntimeIdentifier="$RID" \
+            -p:EnableCodeSigning=false
+          mkdir -p ../../../artifacts/ios
+          APP_PATH="$(find bin-ios/Debug/net10.0-ios -type d -name '*.app' -print -quit)"
+          test -n "$APP_PATH" || { echo 'No simulator .app bundle was produced.' >&2; find bin-ios/Debug -maxdepth 6 -print; exit 1; }
+          ditto "$APP_PATH" ../../../artifacts/ios/MoodPress-iOS-Simulator.app
+          ditto -c -k --sequesterRsrc --keepParent ../../../artifacts/ios/MoodPress-iOS-Simulator.app ../../../artifacts/ios/MoodPress-iOS-Simulator.zip
+          shasum -a 256 ../../../artifacts/ios/MoodPress-iOS-Simulator.zip | tee ../../../artifacts/ios/SHA256SUMS.txt
+
+      - name: Upload simulator build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MoodPress-iOS-Simulator-2.3.1
+          path: artifacts/ios/*
+          if-no-files-found: error
+          retention-days: 14
