@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   push:
     paths:
-      - 'MoodPress-iOS-compleet-2.3.1.zip'
+      - 'MoodPress-iOS-compleet-2.3.2.zip'
       - '.github/workflows/moodpress-ios-build.yml'
 
 permissions:
@@ -12,19 +12,17 @@ permissions:
 
 jobs:
   build-ios-simulator:
-    # .NET for iOS 27.0.10722 requires Xcode 27.0. The macos-15 runner has Xcode 16.4.
-    # The xcode-27 hosted image supplies the matching Xcode toolchain.
     runs-on: xcode-27
     timeout-minutes: 45
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Validate source archive
         shell: bash
         run: |
           set -euo pipefail
-          archive='MoodPress-iOS-compleet-2.3.1.zip'
+          archive='MoodPress-iOS-compleet-2.3.2.zip'
           test -f "$archive" || { echo "Upload $archive to the repository root first." >&2; exit 1; }
           unzip -t "$archive"
           mkdir -p source
@@ -35,14 +33,15 @@ jobs:
           test -f source/MijnGevoel-Android/MijnGevoel.Core/MijnGevoel.Core.csproj
           test -f source/MijnGevoel-Android/MijnGevoel.Tests/MijnGevoel.Tests.csproj
           grep -q '<TargetFramework>net10.0-ios</TargetFramework>' "$project"
-          grep -q '<ApplicationDisplayVersion>2.3.1</ApplicationDisplayVersion>' "$project"
-          grep -q '<ApplicationVersion>28</ApplicationVersion>' "$project"
+          grep -q '<ApplicationDisplayVersion>2.3.2</ApplicationDisplayVersion>' "$project"
+          grep -q '<ApplicationVersion>29</ApplicationVersion>' "$project"
           grep -q '<ApplicationTitle>MoodPress</ApplicationTitle>' "$project"
           grep -q 'NSFaceIDUsageDescription' source/MijnGevoel-Android/MijnGevoel.Android/Platforms/iOS/Info.plist
-          echo 'iOS project, privacy strings and version passed pre-build checks.'
+          grep -q 'UISupportedInterfaceOrientations' source/MijnGevoel-Android/MijnGevoel.Android/Platforms/iOS/Info.plist
+          echo 'iOS project, privacy strings, orientation configuration and version passed pre-build checks.'
 
       - name: Set up .NET SDKs
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: |
             8.0.x
@@ -65,7 +64,7 @@ jobs:
           set -euo pipefail
           dotnet test source/MijnGevoel-Android/MijnGevoel.Tests/MijnGevoel.Tests.csproj --configuration Release --logger "console;verbosity=normal"
 
-      - name: Install .NET MAUI iOS workload compatible with Xcode 27
+      - name: Install .NET MAUI workload compatible with Xcode 27
         run: dotnet workload install maui --version 10.0.401.1
 
       - name: Build for iOS Simulator (unsigned)
@@ -91,9 +90,9 @@ jobs:
           shasum -a 256 ../../../artifacts/ios/MoodPress-iOS-Simulator.zip | tee ../../../artifacts/ios/SHA256SUMS.txt
 
       - name: Upload simulator build artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
-          name: MoodPress-iOS-Simulator-2.3.1
+          name: MoodPress-iOS-Simulator-2.3.2
           path: artifacts/ios/*
           if-no-files-found: error
           retention-days: 14
