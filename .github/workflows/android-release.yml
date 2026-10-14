@@ -1,4 +1,4 @@
-name: Mijn Gevoel 2.0 - Android Release
+name: MoodPress 2.2 - Android Release
 
 on:
   workflow_dispatch:
@@ -18,10 +18,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # Gebruik bewust exact de 2.0-broncode, ook als oudere ZIP-bestanden blijven staan.
-          zip_file='MijnGevoel-Android-compleet-2.0.zip'
+          # Gebruik bewust exact de 2.2-broncode, ook als oudere ZIP-bestanden blijven staan.
+          zip_file='MoodPress-Android-compleet-2.2.zip'
           if [[ ! -f "$zip_file" ]]; then
-            echo "Bestand $zip_file ontbreekt in de hoofdmap. Upload eerst het 2.0-broncodepakket." >&2
+            echo "Bestand $zip_file ontbreekt in de hoofdmap. Upload eerst het 2.2-broncodepakket." >&2
             exit 1
           fi
           echo "Bronbestand: $zip_file"
@@ -60,10 +60,11 @@ jobs:
           set -euo pipefail
           project='source/MijnGevoel-Android/MijnGevoel.Android/MijnGevoel.Android.csproj'
           grep -q '<TargetFramework>net10.0-android</TargetFramework>' "$project"
-          grep -q '<ApplicationDisplayVersion>2.0</ApplicationDisplayVersion>' "$project"
-          grep -q '<ApplicationVersion>20</ApplicationVersion>' "$project"
+          grep -q '<ApplicationDisplayVersion>2.2</ApplicationDisplayVersion>' "$project"
+          grep -q '<ApplicationVersion>23</ApplicationVersion>' "$project"
           grep -q 'Xamarin.AndroidX.Biometric" Version="1.1.0.33"' "$project"
           grep -q 'Plugin.Maui.Audio" Version="4.0.0"' "$project"
+          grep -q 'android.permission.POST_NOTIFICATIONS' source/MijnGevoel-Android/MijnGevoel.Android/Platforms/Android/AndroidManifest.xml
 
       - name: Voer tests uit
         working-directory: source/MijnGevoel-Android
@@ -121,7 +122,7 @@ jobs:
             exit 1
           fi
           mkdir -p ../../artifacts
-          cp "$apk" ../../artifacts/MijnGevoel-Android-release.apk
+          cp "$apk" ../../artifacts/MoodPress-Android-release.apk
 
       - name: Bouw ondertekende Google Play App Bundle
         working-directory: source/MijnGevoel-Android
@@ -154,18 +155,18 @@ jobs:
             find "$output" -maxdepth 6 -type f -print || true
             exit 1
           fi
-          cp "$aab" ../../artifacts/MijnGevoel-Android-release.aab
+          cp "$aab" ../../artifacts/MoodPress-Android-release.aab
           cd ../../artifacts
-          sha256sum MijnGevoel-Android-release.apk MijnGevoel-Android-release.aab | tee SHA256SUMS.txt
+          sha256sum MoodPress-Android-release.apk MoodPress-Android-release.aab | tee SHA256SUMS.txt
           ls -lh
 
       - name: Upload APK, AAB en checksums
         uses: actions/upload-artifact@v7
         with:
-          name: MijnGevoel-Android-release-apk
+          name: MoodPress-Android-release-2.2
           path: |
-            artifacts/MijnGevoel-Android-release.apk
-            artifacts/MijnGevoel-Android-release.aab
+            artifacts/MoodPress-Android-release.apk
+            artifacts/MoodPress-Android-release.aab
             artifacts/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 30
