@@ -121,24 +121,56 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           Set-Location $env:MOODPRESS_PROJECT_ROOT
+          $publishDir = Join-Path $env:MOODPRESS_PROJECT_ROOT "publish"
           $required = @(
             "installer\Package.wxs",
             "installer\Voorwaarden.rtf",
             "installer\banner.bmp",
             "installer\dialoog.bmp",
             "MoodPress.WindowsApp\Resources\AppIcon\MoodPress.ico",
-            "publish\MoodPress.exe"
+            (Join-Path $publishDir "MoodPress.exe")
           )
           foreach ($file in $required) { if (!(Test-Path $file)) { throw "Required installer file missing: $file" } }
-          wix build installer\Package.wxs `
+
+          # WiX resolves relative Files/Exclude globs relative to Package.wxs, so
+          # 'PublishDir=publish' incorrectly points at installer\publish. Pass
+          # the absolute publish folder so the MSI embeds all MAUI/runtime files.
+          $publishedFiles = @(Get-ChildItem $publishDir -Recurse -File)
+          if ($publishedFiles.Count -lt 10) {
+            throw "Only $($publishedFiles.Count) files were found in the published app. Refusing to create an incomplete MSI."
+          }
+          Write-Host "Files in complete published app: $($publishedFiles.Count)"
+          $publishDirForWix = $publishDir
+          $wixOutput = & wix build installer\Package.wxs `
             -ext WixToolset.UI.wixext `
             -culture nl-NL `
             -arch x64 `
-            -d PublishDir=publish `
-            -o MoodPress-Windows-Setup.msi
-          if ($LASTEXITCODE -ne 0) { throw "WiX could not build the MoodPress MSI." }
-          if (!(Test-Path "MoodPress-Windows-Setup.msi")) { throw "MSI output was not created." }
-          Write-Host "Created branded MSI: $env:MOODPRESS_PROJECT_ROOT\MoodPress-Windows-Setup.msi"
+            -d "PublishDir=$publishDirForWix" `
+            -o MoodPress-Windows-Setup.msi 2>&1
+          $wixExitCode = $LASTEXITCODE
+          $wixOutput | ForEach-Object { Write-Host $_ }
+          $wixText = $wixOutput | Out-String
+          if ($wixExitCode -ne 0) { throw "WiX could not build the MoodPress MSI." }
+          if ($wixText -match "WIX8601") {
+            throw "WiX could not find the publish directory while harvesting files. Refusing to ship a broken MSI."
+          }
+          $msi = Join-Path $env:MOODPRESS_PROJECT_ROOT "MoodPress-Windows-Setup.msi"
+          if (!(Test-Path $msi)) { throw "MSI output was not created." }
+
+          # Inspect the MSI File table: an MSI containing only the launcher can
+          # build successfully but will not start because the dependencies are absent.
+          $windowsInstaller = New-Object -ComObject WindowsInstaller.Installer
+          $database = $windowsInstaller.OpenDatabase($msi, 0)
+          $view = $database.OpenView('SELECT `File` FROM `File`')
+          $view.Execute()
+          $msiFileCount = 0
+          while ($null -ne $view.Fetch()) { $msiFileCount++ }
+          $view.Close()
+          Write-Host "Files embedded in MSI: $msiFileCount"
+          if ($msiFileCount -lt 10) {
+            throw "The MSI contains only $msiFileCount files, although the publish folder contains $($publishedFiles.Count). Refusing to ship an incomplete MSI."
+          }
+          Write-Host "Created branded MoodPress MSI with harvested runtime files: $msi"
 
       - name: Collect installer, portable app and SHA-256 checksums
         shell: pwsh
