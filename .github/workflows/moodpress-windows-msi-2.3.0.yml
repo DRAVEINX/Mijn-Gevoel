@@ -46,17 +46,25 @@ jobs:
 
           if (!$desktop) {
             Get-ChildItem $sourceRoot -Recurse -Filter "*.csproj" | ForEach-Object { Write-Host $_.FullName }
-            throw "The archive does not contain MijnGevoel.Desktop.csproj. No Windows app will be fabricated; check that the latest full source archive was uploaded."
+            throw "The archive does not contain MijnGevoel.Desktop.csproj. Check that the latest full source archive was uploaded."
           }
           if (!$core) { throw "MijnGevoel.Core.csproj was not found in the source archive." }
           if (!$tests) { throw "MijnGevoel.Tests.csproj was not found in the source archive." }
 
+          # Package.wxs and the installer resources live at the solution root,
+          # one directory above the desktop project folder.
+          $projectRoot = Split-Path (Split-Path $desktop.FullName -Parent) -Parent
+          if (!(Test-Path (Join-Path $projectRoot "installer\Package.wxs"))) {
+            throw "installer\Package.wxs was not found next to the desktop project root: $projectRoot"
+          }
+          "MOODPRESS_PROJECT_ROOT=$projectRoot" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           "MOODPRESS_DESKTOP_PROJECT=$($desktop.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           "MOODPRESS_CORE_PROJECT=$($core.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           "MOODPRESS_TESTS_PROJECT=$($tests.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-          Write-Host "Desktop: $($desktop.FullName)"
-          Write-Host "Core:    $($core.FullName)"
-          Write-Host "Tests:   $($tests.FullName)"
+          Write-Host "Project root: $projectRoot"
+          Write-Host "Desktop:      $($desktop.FullName)"
+          Write-Host "Core:         $($core.FullName)"
+          Write-Host "Tests:        $($tests.FullName)"
 
       - name: Set up .NET 8
         uses: actions/setup-dotnet@v4
@@ -68,41 +76,79 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           dotnet test "$env:MOODPRESS_TESTS_PROJECT" --configuration Release --logger "console;verbosity=normal"
+          if ($LASTEXITCODE -ne 0) { throw "MoodPress regression tests failed." }
 
       - name: Build Windows desktop application
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
+          $publishDir = Join-Path $env:MOODPRESS_PROJECT_ROOT "publish"
+          if (Test-Path $publishDir) { Remove-Item $publishDir -Recurse -Force }
           dotnet restore "$env:MOODPRESS_DESKTOP_PROJECT"
+          if ($LASTEXITCODE -ne 0) { throw "dotnet restore failed." }
           dotnet publish "$env:MOODPRESS_DESKTOP_PROJECT" `
             --configuration Release `
             --runtime win-x64 `
             --self-contained true `
-            -p:PublishSingleFile=false `
+            -p:PublishSingleFile=true `
             -p:DebugType=None `
-            -p:DebugSymbols=false
+            -p:DebugSymbols=false `
+            --output "$publishDir"
+          if ($LASTEXITCODE -ne 0) { throw "Windows desktop publish failed." }
 
-      - name: Locate and build the existing MSI installer project
+          # Package.wxs currently refers to MijnGevoel.exe while the desktop
+          # project's AssemblyName is MoodPress. Provide that filename for MSI
+          # packaging without changing the desktop project or Android builds.
+          $builtExe = Join-Path $publishDir "MoodPress.exe"
+          $installerExe = Join-Path $publishDir "MijnGevoel.exe"
+          if (!(Test-Path $builtExe)) { throw "Expected desktop executable not found: $builtExe" }
+          Copy-Item -LiteralPath $builtExe -Destination $installerExe -Force
+          Write-Host "Published desktop app: $builtExe"
+
+      - name: Build MSI with the existing WiX 5 installer
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          $wixProject = Get-ChildItem $env:MOODPRESS_SOURCE -Recurse -Filter "*.wixproj" |
-            Select-Object -First 1
-          $wxsFiles = @(Get-ChildItem $env:MOODPRESS_SOURCE -Recurse -Filter "*.wxs")
-          if ($wixProject) {
-            Write-Host "Building existing WiX project: $($wixProject.FullName)"
-            choco install wixtoolset --no-progress -y
-            dotnet build "$($wixProject.FullName)" --configuration Release
-          } elseif ($wxsFiles.Count -gt 0) {
-            Write-Host "Found WiX source files but no .wixproj; installing WiX Toolset."
-            choco install wixtoolset --no-progress -y
-            $wixExe = Get-ChildItem "${env:ProgramFiles(x86)}\WiX Toolset*" -Recurse -Filter "candle.exe" |
-              Select-Object -First 1
-            if (!$wixExe) { throw "WiX compiler was not found after installation." }
-            throw "A .wxs file exists without a .wixproj. The installer needs a project file so its payload and upgrade rules can be built safely."
-          } else {
-            throw "No existing WiX MSI installer project (.wixproj) was found. Add the Windows installer project from the full desktop source before producing an MSI."
+          Set-Location $env:MOODPRESS_PROJECT_ROOT
+          $wxs = Join-Path $env:MOODPRESS_PROJECT_ROOT "installer\Package.wxs"
+          foreach ($asset in @(
+            "installer\Voorwaarden.rtf",
+            "installer\banner.bmp",
+            "installer\dialoog.bmp",
+            "MijnGevoel.Desktop\Assets\MijnGevoel.ico"
+          )) {
+            if (!(Test-Path (Join-Path $env:MOODPRESS_PROJECT_ROOT $asset))) {
+              throw "Required MSI asset is missing: $asset"
+            }
           }
+          if (!(Test-Path $wxs)) { throw "WiX source not found: $wxs" }
+
+          # Use the same WiX 5 CLI workflow as bouwen.bat. A .wixproj is not
+          # required for this existing .wxs-based installer.
+          $installedWix = dotnet tool list --global | Select-String '^\s*wix\s'
+          if ($installedWix) {
+            dotnet tool update --global wix --version 5.0.2
+          } else {
+            dotnet tool install --global wix --version 5.0.2
+          }
+          if ($LASTEXITCODE -ne 0) { throw "Could not install or update the WiX 5 CLI." }
+          $env:PATH = "$env:USERPROFILE\.dotnet\tools;$env:PATH"
+
+          wix extension add -g WixToolset.UI.wixext/5.0.2
+          if ($LASTEXITCODE -ne 0) { throw "Could not install the WiX UI extension." }
+
+          wix build installer\Package.wxs `
+            -ext WixToolset.UI.wixext `
+            -culture nl-NL `
+            -arch x64 `
+            -d PublishDir=publish `
+            -o MoodPress-Windows-Setup.msi
+          if ($LASTEXITCODE -ne 0) { throw "WiX failed to build MoodPress-Windows-Setup.msi." }
+          if (!(Test-Path "MoodPress-Windows-Setup.msi")) { throw "WiX finished without producing the MSI." }
+
+          # This renamed copy is only used while WiX embeds the executable.
+          Remove-Item -LiteralPath (Join-Path $env:MOODPRESS_PROJECT_ROOT "publish\MijnGevoel.exe") -Force
+          Write-Host "MSI created: $env:MOODPRESS_PROJECT_ROOT\MoodPress-Windows-Setup.msi"
 
       - name: Collect MSI, portable build and checksums
         shell: pwsh
@@ -111,29 +157,18 @@ jobs:
           $artifactDir = Join-Path $env:GITHUB_WORKSPACE "artifacts\windows"
           New-Item -ItemType Directory -Force -Path $artifactDir | Out-Null
 
-          $msi = Get-ChildItem $env:MOODPRESS_SOURCE -Recurse -Filter "*.msi" |
-            Sort-Object LastWriteTime -Descending |
-            Select-Object -First 1
-          if (!$msi) {
-            throw "The Windows build finished but did not produce an MSI file."
-          }
-          Copy-Item -LiteralPath $msi.FullName -Destination (Join-Path $artifactDir "MoodPress-Windows-Setup.msi") -Force
+          $msi = Join-Path $env:MOODPRESS_PROJECT_ROOT "MoodPress-Windows-Setup.msi"
+          if (!(Test-Path $msi)) { throw "The Windows installer was not produced: $msi" }
+          Copy-Item -LiteralPath $msi -Destination (Join-Path $artifactDir "MoodPress-Windows-Setup.msi") -Force
 
-          $publishDir = Get-ChildItem (Split-Path $env:MOODPRESS_DESKTOP_PROJECT) -Recurse -Directory |
-            Where-Object { $_.FullName -match "\\bin\\Release\\net8\.0-windows.*\\win-x64\\publish$" } |
-            Sort-Object FullName -Descending |
-            Select-Object -First 1
-          if (!$publishDir) {
-            $publishDir = Get-ChildItem (Split-Path $env:MOODPRESS_DESKTOP_PROJECT) -Recurse -Directory |
-              Where-Object { $_.Name -eq "publish" -and $_.FullName -match "\\bin\\Release\\" } |
-              Select-Object -First 1
+          $publishDir = Join-Path $env:MOODPRESS_PROJECT_ROOT "publish"
+          if (!(Test-Path (Join-Path $publishDir "MoodPress.exe"))) {
+            throw "The published desktop executable is missing: $publishDir\MoodPress.exe"
           }
-          if ($publishDir) {
-            $portable = Join-Path $artifactDir "MoodPress-Windows-Portable"
-            New-Item -ItemType Directory -Force -Path $portable | Out-Null
-            Copy-Item -Path (Join-Path $publishDir.FullName "*") -Destination $portable -Recurse -Force
-            Compress-Archive -Path (Join-Path $portable "*") -DestinationPath (Join-Path $artifactDir "MoodPress-Windows-Portable.zip") -Force
-          }
+          $portable = Join-Path $artifactDir "MoodPress-Windows-Portable"
+          New-Item -ItemType Directory -Force -Path $portable | Out-Null
+          Copy-Item -Path (Join-Path $publishDir "*") -Destination $portable -Recurse -Force
+          Compress-Archive -Path (Join-Path $portable "*") -DestinationPath (Join-Path $artifactDir "MoodPress-Windows-Portable.zip") -Force
 
           Get-ChildItem $artifactDir -File -Recurse |
             Get-FileHash -Algorithm SHA256 |
