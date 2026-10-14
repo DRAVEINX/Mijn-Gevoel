@@ -12,7 +12,8 @@ permissions:
 
 jobs:
   build-ios-simulator:
-    runs-on: macos-latest
+    # Use the stable macOS 15 image instead of the moving macos-latest alias.
+    runs-on: macos-15
     timeout-minutes: 45
     steps:
       - name: Check out repository
