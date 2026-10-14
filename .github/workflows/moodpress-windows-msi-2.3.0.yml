@@ -4,6 +4,7 @@ on:
   workflow_dispatch:
   push:
     paths:
+      - "MoodPress-Windows-source-2.3.0.zip"
       - "MoodPress-Windows-source-2.3.0-fixed.zip"
       - ".github/workflows/moodpress-windows-msi-2.3.0.yml"
 
@@ -31,10 +32,15 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          $archive = Join-Path $env:GITHUB_WORKSPACE "MoodPress-Windows-source-2.3.0-fixed.zip"
-          if (!(Test-Path $archive)) {
-            throw "Missing MoodPress-Windows-source-2.3.0-fixed.zip. Upload the separate Windows source archive first."
+          $archiveCandidates = @(
+            (Join-Path $env:GITHUB_WORKSPACE "MoodPress-Windows-source-2.3.0.zip"),
+            (Join-Path $env:GITHUB_WORKSPACE "MoodPress-Windows-source-2.3.0-fixed.zip")
+          )
+          $archive = $archiveCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (!$archive) {
+            throw "Missing MoodPress-Windows-source-2.3.0.zip. Upload the separate Windows source archive first."
           }
+          Write-Host "Using Windows source archive: $archive"
           $sourceRoot = Join-Path $env:RUNNER_TEMP "moodpress-windows-source"
           New-Item -ItemType Directory -Force -Path $sourceRoot | Out-Null
           Expand-Archive -LiteralPath $archive -DestinationPath $sourceRoot -Force
