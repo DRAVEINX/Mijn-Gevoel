@@ -1,0 +1,188 @@
+name: MoodPress Tablet 2.3.0 - Android Release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    name: Test and build signed APK and Google Play bundle
+    runs-on: ubuntu-latest
+    steps:
+      - name: Haal repository op
+        uses: actions/checkout@v7
+
+      - name: Zoek en controleer de 2.3.0-broncode
+        shell: bash
+        run: |
+          set -euo pipefail
+          zip_file='MoodPress-Android-Tablet-2.3.0.zip'
+          if [[ ! -f "$zip_file" ]]; then
+            echo "Bestand $zip_file ontbreekt in de hoofdmap. Upload eerst het 2.3.0-broncodepakket." >&2
+            exit 1
+          fi
+          echo "ZIP_FILE=$zip_file" >> "$GITHUB_ENV"
+          unzip -t "$zip_file"
+
+      - name: Installeer .NET SDK's
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - name: Installeer Java 17
+        uses: actions/setup-java@v6
+        with:
+          distribution: microsoft
+          java-version: '17'
+
+      - name: Installeer MAUI Android-workload
+        run: dotnet workload install maui-android
+
+      - name: Pak het project uit
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p source
+          unzip -q "$ZIP_FILE" -d source
+          test -f source/MijnGevoel-Android/MijnGevoel.Android/MijnGevoel.Android.csproj
+          test -f source/MijnGevoel-Android/MijnGevoel.Core/MijnGevoel.Core.csproj
+          test -f source/MijnGevoel-Android/MijnGevoel.Tests/MijnGevoel.Tests.csproj
+
+      - name: Controleer release-instellingen
+        shell: bash
+        run: |
+          set -euo pipefail
+          project='source/MijnGevoel-Android/MijnGevoel.Android/MijnGevoel.Android.csproj'
+          grep -q '<TargetFramework>net10.0-android</TargetFramework>' "$project"
+          grep -q '<ApplicationDisplayVersion>2.3.0</ApplicationDisplayVersion>' "$project"
+          grep -q '<ApplicationVersion>28</ApplicationVersion>' "$project"
+          grep -q '<ApplicationId>nl.mijngevoel.app.tablet</ApplicationId>' "$project"
+          grep -q '<ApplicationTitle>MoodPress Tablet</ApplicationTitle>' "$project"
+          grep -q 'Xamarin.AndroidX.Biometric" Version="1.1.0.33"' "$project"
+          grep -q 'Plugin.Maui.Audio" Version="4.0.0"' "$project"
+          grep -q 'android.permission.POST_NOTIFICATIONS' source/MijnGevoel-Android/MijnGevoel.Android/Platforms/Android/AndroidManifest.xml
+          grep -Fq 'ForegroundScale="1.0"' "$project"
+          grep -Fq 'viewBox="0 0 456 456"' source/MijnGevoel-Android/MijnGevoel.Android/Resources/AppIcon/appiconfg.svg
+          grep -Fq 'AutoSize = EditorAutoSizeOption.TextChanges' source/MijnGevoel-Android/MijnGevoel.Android/AppUi.cs
+          grep -Fq 'class SupporterCenterPage' source/MijnGevoel-Android/MijnGevoel.Android/SupporterCenterPage.cs
+          grep -Fq 'class SupporterColorGuidePage' source/MijnGevoel-Android/MijnGevoel.Android/SupporterCenterPage.cs
+          grep -Fq 'class ChildSchedulePage' source/MijnGevoel-Android/MijnGevoel.Android/SupportPackagePages.cs
+          grep -Fq 'SelectedItemLabels' source/MijnGevoel-Android/MijnGevoel.Core/Data/Models.cs
+          grep -Fq 'class MoodPressRoadmapModelTests' source/MijnGevoel-Android/MijnGevoel.Tests/SecurityTests.cs
+
+      - name: Voer tests uit
+        working-directory: source/MijnGevoel-Android
+        run: |
+          set -euo pipefail
+          dotnet restore MijnGevoel.Tests/MijnGevoel.Tests.csproj
+          dotnet test MijnGevoel.Tests/MijnGevoel.Tests.csproj --configuration Release --no-restore --logger "console;verbosity=normal"
+
+      - name: Decodeer persoonlijke ondertekeningssleutel
+        shell: bash
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${ANDROID_KEYSTORE_BASE64:-}" ]]; then
+            echo "GitHub Secret ANDROID_KEYSTORE_BASE64 ontbreekt." >&2
+            exit 1
+          fi
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/moodpress-release.keystore"
+          test -s "$RUNNER_TEMP/moodpress-release.keystore"
+          chmod 600 "$RUNNER_TEMP/moodpress-release.keystore"
+
+      - name: Bouw ondertekende Release-APK
+        working-directory: source/MijnGevoel-Android
+        shell: bash
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          set -euo pipefail
+          : "${ANDROID_KEYSTORE_PASSWORD:?GitHub Secret ANDROID_KEYSTORE_PASSWORD ontbreekt}"
+          : "${ANDROID_KEY_PASSWORD:?GitHub Secret ANDROID_KEY_PASSWORD ontbreekt}"
+          : "${ANDROID_KEY_ALIAS:?GitHub Secret ANDROID_KEY_ALIAS ontbreekt}"
+          dotnet restore MijnGevoel.Android/MijnGevoel.Android.csproj
+          dotnet publish MijnGevoel.Android/MijnGevoel.Android.csproj \
+            --configuration Release \
+            --framework net10.0-android \
+            -p:AndroidPackageFormat=apk \
+            -p:AndroidKeyStore=true \
+            "-p:AndroidSigningKeyStore=$RUNNER_TEMP/moodpress-release.keystore" \
+            "-p:AndroidSigningKeyAlias=$ANDROID_KEY_ALIAS" \
+            -p:AndroidSigningKeyPass=env:ANDROID_KEY_PASSWORD \
+            -p:AndroidSigningStorePass=env:ANDROID_KEYSTORE_PASSWORD
+
+      - name: Bewaar APK als releasebestand
+        shell: bash
+        working-directory: source/MijnGevoel-Android
+        run: |
+          set -euo pipefail
+          output='MijnGevoel.Android/bin/Release/net10.0-android'
+          apk="$(find "$output" -type f -iname '*.apk' -printf '%T@ %p\n' | sort -nr | head -n 1 | cut -d' ' -f2-)"
+          if [[ -z "$apk" || ! -f "$apk" ]]; then
+            echo "De Release-build heeft geen APK opgeleverd." >&2
+            find "$output" -maxdepth 6 -type f -print || true
+            exit 1
+          fi
+          mkdir -p "$GITHUB_WORKSPACE/artifacts"
+          cp "$apk" "$GITHUB_WORKSPACE/artifacts/MoodPress-Tablet-release.apk"
+
+      - name: Bouw ondertekende Google Play App Bundle
+        working-directory: source/MijnGevoel-Android
+        shell: bash
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          set -euo pipefail
+          dotnet publish MijnGevoel.Android/MijnGevoel.Android.csproj \
+            --configuration Release \
+            --framework net10.0-android \
+            -p:AndroidPackageFormat=aab \
+            -p:AndroidKeyStore=true \
+            "-p:AndroidSigningKeyStore=$RUNNER_TEMP/moodpress-release.keystore" \
+            "-p:AndroidSigningKeyAlias=$ANDROID_KEY_ALIAS" \
+            -p:AndroidSigningKeyPass=env:ANDROID_KEY_PASSWORD \
+            -p:AndroidSigningStorePass=env:ANDROID_KEYSTORE_PASSWORD
+
+      - name: Controleer AAB, maak checksums
+        shell: bash
+        working-directory: source/MijnGevoel-Android
+        run: |
+          set -euo pipefail
+          output='MijnGevoel.Android/bin/Release/net10.0-android'
+          aab="$(find "$output" -type f -iname '*.aab' -printf '%T@ %p\n' | sort -nr | head -n 1 | cut -d' ' -f2-)"
+          if [[ -z "$aab" || ! -f "$aab" ]]; then
+            echo "De Release-build heeft geen AAB opgeleverd." >&2
+            find "$output" -maxdepth 6 -type f -print || true
+            exit 1
+          fi
+          cp "$aab" "$GITHUB_WORKSPACE/artifacts/MoodPress-Tablet-release.aab"
+          cp "$GITHUB_WORKSPACE/$ZIP_FILE" "$GITHUB_WORKSPACE/artifacts/MoodPress-Android-Tablet-2.3.0.zip"
+          cd "$GITHUB_WORKSPACE/artifacts"
+          sha256sum MoodPress-Tablet-release.apk MoodPress-Tablet-release.aab MoodPress-Android-Tablet-2.3.0.zip | tee SHA256SUMS.txt
+          ls -lh
+
+      - name: Upload APK, AAB en checksums
+        uses: actions/upload-artifact@v7
+        with:
+          name: MoodPress-Tablet-release-2.3.0
+          path: |
+            artifacts/MoodPress-Tablet-release.apk
+            artifacts/MoodPress-Tablet-release.aab
+            artifacts/MoodPress-Android-Tablet-2.3.0.zip
+            artifacts/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Verwijder ondertekeningssleutel van runner
+        if: always()
+        shell: bash
+        run: rm -f "$RUNNER_TEMP/moodpress-release.keystore"
