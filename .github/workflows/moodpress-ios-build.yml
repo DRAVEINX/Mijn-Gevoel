@@ -12,8 +12,9 @@ permissions:
 
 jobs:
   build-ios-simulator:
-    # Use the stable macOS 15 image instead of the moving macos-latest alias.
-    runs-on: macos-15
+    # .NET for iOS 27.0.10722 requires Xcode 27.0. The macos-15 runner has Xcode 16.4.
+    # The xcode-27 hosted image supplies the matching Xcode toolchain.
+    runs-on: xcode-27
     timeout-minutes: 45
     steps:
       - name: Check out repository
@@ -45,12 +46,17 @@ jobs:
         with:
           dotnet-version: |
             8.0.x
-            10.0.x
+            10.0.401
 
-      - name: Show Apple build environment
+      - name: Verify Xcode and .NET versions
+        shell: bash
         run: |
+          set -euo pipefail
           xcodebuild -version
+          XCODE_VERSION="$(xcodebuild -version | awk '/^Xcode / {print $2}')"
+          [[ "$XCODE_VERSION" == 27.0* ]] || { echo "Expected Xcode 27.0, found $XCODE_VERSION" >&2; exit 1; }
           dotnet --list-sdks
+          dotnet --version
           dotnet --info
 
       - name: Run shared Core tests
@@ -59,8 +65,8 @@ jobs:
           set -euo pipefail
           dotnet test source/MijnGevoel-Android/MijnGevoel.Tests/MijnGevoel.Tests.csproj --configuration Release --logger "console;verbosity=normal"
 
-      - name: Install .NET MAUI iOS workload
-        run: dotnet workload install maui-ios
+      - name: Install .NET MAUI iOS workload compatible with Xcode 27
+        run: dotnet workload install maui --version 10.0.401.1
 
       - name: Build for iOS Simulator (unsigned)
         shell: bash
