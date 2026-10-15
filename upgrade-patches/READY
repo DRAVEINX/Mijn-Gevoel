@@ -26,3 +26,4 @@ Run release repair workflow in a fresh concurrency group.
 # Retry Android phone/tablet build after workflow fixes: 2026-10-15
 # Retry phone build after artifact checksum fix: 2026-10-15
 # Retry with APK validation diagnostics: 2026-10-15
+# Retry after repairing malformed validation workflow: 2026-10-15
