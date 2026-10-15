@@ -176,3 +176,57 @@ jobs:
           path: artifacts/
           if-no-files-found: error
           retention-days: 14
+
+  windows-desktop-build:
+    name: Windows desktop build and regression tests
+    needs: upgrade-and-build
+    runs-on: windows-latest
+    steps:
+      - name: Download the same validated 3.1.0 source archive
+        uses: actions/download-artifact@v4
+        with:
+          name: MoodPress-Android-compleet-3.1.0-source
+          path: incoming
+
+      - name: Unpack the validated source archive
+        shell: pwsh
+        run: |
+          $archive = Join-Path $PWD "incoming/MoodPress-Android-compleet-3.1.0.zip"
+          if (!(Test-Path $archive)) { throw "Validated source archive is missing: $archive" }
+          Expand-Archive -LiteralPath $archive -DestinationPath "$PWD/source" -Force
+          if (!(Test-Path "$PWD/source/MijnGevoel-Android/MijnGevoel.Desktop/MijnGevoel.Desktop.csproj")) { throw "Desktop project not found." }
+
+      - name: Install .NET 8 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Restore and run regression tests on Windows
+        working-directory: source/MijnGevoel-Android
+        shell: pwsh
+        run: |
+          dotnet restore MijnGevoel.Tests/MijnGevoel.Tests.csproj
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          dotnet test MijnGevoel.Tests/MijnGevoel.Tests.csproj --configuration Release --no-restore --logger "console;verbosity=normal"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Build self-contained Windows desktop app
+        working-directory: source/MijnGevoel-Android
+        shell: pwsh
+        run: |
+          dotnet restore MijnGevoel.Desktop/MijnGevoel.Desktop.csproj
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          dotnet publish MijnGevoel.Desktop/MijnGevoel.Desktop.csproj --configuration Release --runtime win-x64 --self-contained true -p:PublishSingleFile=true
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $publish = "MijnGevoel.Desktop/bin/Release/net8.0-windows/win-x64/publish"
+          if (!(Test-Path "$publish/MoodPress.exe")) { throw "Expected MoodPress.exe was not created." }
+          New-Item -ItemType Directory -Path "$PWD/artifacts" -Force | Out-Null
+          Compress-Archive -Path "$publish/*" -DestinationPath "$PWD/artifacts/MoodPress-Windows-3.1.0-portable.zip" -Force
+
+      - name: Upload Windows portable build
+        uses: actions/upload-artifact@v4
+        with:
+          name: MoodPress-Windows-3.1.0-portable
+          path: source/MijnGevoel-Android/artifacts/MoodPress-Windows-3.1.0-portable.zip
+          if-no-files-found: error
+          retention-days: 14
