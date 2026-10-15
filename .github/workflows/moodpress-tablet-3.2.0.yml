@@ -207,7 +207,7 @@ jobs:
           unzip -t "$apk"
           mkdir -p "$GITHUB_WORKSPACE/artifacts"
           cp "$apk" "$GITHUB_WORKSPACE/artifacts/MoodPress-Android-Tablet-3.3.0-debug.apk"
-          (cd source/MijnGevoel-Android && zip -qr -X "$GITHUB_WORKSPACE/artifacts/MoodPress-Android-Tablet-compleet-3.3.0.zip" . -x "./artifacts/*")
+          zip -qr -X "$GITHUB_WORKSPACE/artifacts/MoodPress-Android-Tablet-compleet-3.3.0.zip" . -x "./artifacts/*"
           (cd "$GITHUB_WORKSPACE/artifacts" && sha256sum MoodPress-Android-Tablet-3.3.0-debug.apk MoodPress-Android-Tablet-compleet-3.3.0.zip > SHA256SUMS.txt)
 
       - name: Upload tablet APK, source and checksums
