@@ -1,0 +1,138 @@
+--- a/MijnGevoel-Android/MijnGevoel.Android/DashboardPage.cs
++++ b/MijnGevoel-Android/MijnGevoel.Android/DashboardPage.cs
+@@ -11,7 +11,7 @@
+     Stoplicht, DayToday, DayTomorrow, Agenda, Timer, Routines, RoutineReminders,
+     Breath, Calm, Sensory, Body, MoodHistory, FeelingWords,
+     Cards, TalkPrep, StoplichtHistory, Share, SafetyPlan,
+-    Draw, Gallery, Notes, Journal, Privacy, Week, Settings, Help, WhoWorks, DailyCheckIn, MoodCalendar, MoodInsights, YouthSupport, AdultPlanning, Wellbeing, Profile, ShareSupport, ReceiveSupport, ChildSchedule
++    Draw, Gallery, Notes, Journal, Privacy, Week, Settings, Help, WhoWorks, DailyCheckIn, MoodCalendar, MoodInsights, YouthSupport, AdultPlanning, Wellbeing, Profile, ShareSupport, ReceiveSupport, ChildSchedule, PersonalSpace, CaregiverSpace, ParentGuardianSpace
+ }
+ 
+ public sealed class DashboardPage : ContentPage
+@@ -82,6 +82,8 @@
+         Grid.SetColumn(hello, 1);
+         Grid.SetColumn(actions, 2);
+         root.Children.Add(top);
++        root.Children.Add(AppUi.AsyncButton("🧭 Mijn omgeving: " + WorkspaceRoleService.Normalize(AppSession.Settings.WorkspaceRole),
++            async () => await Navigation.PushAsync(new WorkspacePage()), quiet: true));
+ 
+         root.Children.Add(SectionHeading("Waar wil je naartoe?"));
+         var knownFeatures = FeatureCatalog.All.Select(x => x.Kind.ToString()).ToArray();
+@@ -443,11 +445,14 @@
+         grid.Add(tile, col, row);
+     }
+ 
+-    bool IsFeatureEnabled(FeatureKind kind) => FeatureVisibilityService.IsEnabled(AppSession.Settings, kind.ToString());
++    bool IsFeatureEnabled(FeatureKind kind) => FeatureVisibilityService.IsEnabled(AppSession.Settings, kind.ToString()) && WorkspaceRoleService.CanAccessFeature(AppSession.Settings.WorkspaceRole, kind.ToString());
+ 
+     void Navigate(FeatureKind kind)
+     {
+-        if (kind == FeatureKind.WhoWorks) _ = Navigation.PushAsync(new WieWerktErPage());
++        if (kind == FeatureKind.PersonalSpace) _ = Navigation.PushAsync(new WorkspacePage(WorkspaceRoleService.Personal));
++        else if (kind == FeatureKind.CaregiverSpace) _ = Navigation.PushAsync(new WorkspacePage(WorkspaceRoleService.Caregiver));
++        else if (kind == FeatureKind.ParentGuardianSpace) _ = Navigation.PushAsync(new WorkspacePage(WorkspaceRoleService.ParentGuardian));
++        else if (kind == FeatureKind.WhoWorks) _ = Navigation.PushAsync(new WieWerktErPage());
+         else if (kind == FeatureKind.ChildSchedule) _ = Navigation.PushAsync(new ChildSchedulePage());
+         else if (kind == FeatureKind.ShareSupport) _ = Navigation.PushAsync(new SupportPackageSharePage());
+         else if (kind == FeatureKind.ReceiveSupport) _ = Navigation.PushAsync(new ReceiveSupportPackagePage());
+--- a/MijnGevoel-Android/MijnGevoel.Android/MorePage.cs
++++ b/MijnGevoel-Android/MijnGevoel.Android/MorePage.cs
+@@ -139,7 +139,8 @@
+         _results.Children.Clear();
+         var query = (_search.Text ?? string.Empty).Trim();
+         var all = FeatureCatalog.All;
+-        var matches = all.Where(item => item.Kind == FeatureKind.Settings || FeatureVisibilityService.IsEnabled(AppSession.Settings, item.Kind.ToString()))
++        var matches = all.Where(item => WorkspaceRoleService.CanAccessFeature(AppSession.Settings.WorkspaceRole, item.Kind.ToString()))
++            .Where(item => item.Kind == FeatureKind.Settings || item.Kind is FeatureKind.PersonalSpace or FeatureKind.CaregiverSpace or FeatureKind.ParentGuardianSpace || FeatureVisibilityService.IsEnabled(AppSession.Settings, item.Kind.ToString()))
+             .Where(item => string.IsNullOrWhiteSpace(query)
+                 || item.Label.Contains(query, StringComparison.CurrentCultureIgnoreCase)
+                 || item.Group.Contains(query, StringComparison.CurrentCultureIgnoreCase)
+@@ -225,6 +226,9 @@
+         {
+             switch (kind)
+             {
++                case FeatureKind.PersonalSpace: await Navigation.PushAsync(new WorkspacePage(WorkspaceRoleService.Personal)); break;
++                case FeatureKind.CaregiverSpace: await Navigation.PushAsync(new WorkspacePage(WorkspaceRoleService.Caregiver)); break;
++                case FeatureKind.ParentGuardianSpace: await Navigation.PushAsync(new WorkspacePage(WorkspaceRoleService.ParentGuardian)); break;
+                 case FeatureKind.WhoWorks: await Navigation.PushAsync(new WieWerktErPage()); break;
+                 case FeatureKind.ChildSchedule: await Navigation.PushAsync(new ChildSchedulePage()); break;
+                 case FeatureKind.ShareSupport: await Navigation.PushAsync(new SupportPackageSharePage()); break;
+--- a/MijnGevoel-Android/MijnGevoel.Android/FeatureCatalog.cs
++++ b/MijnGevoel-Android/MijnGevoel.Android/FeatureCatalog.cs
+@@ -52,7 +52,10 @@
+         new(FeatureKind.Privacy, "Mijn privacy", "🔐", "Profiel, privacy en hulp", "Lees hoe je gegevens worden gebruikt."),
+         new(FeatureKind.Week, "Weekoverzicht", "🗒️", "Profiel, privacy en hulp", "Bekijk je eigen weekoverzicht."),
+         new(FeatureKind.Settings, "Instellingen", "⚙️", "Profiel, privacy en hulp", "Pas weergave, toegang en voorkeuren aan."),
+-        new(FeatureKind.Help, "Hulp", "❓", "Profiel, privacy en hulp", "Lees uitleg over de app.")
++        new(FeatureKind.Help, "Hulp", "❓", "Profiel, privacy en hulp", "Lees uitleg over de app."),
++        new(FeatureKind.PersonalSpace, "Mijn ruimte", "💙", "Omgevingen", "Gevoelens, spraak, tekeningen, dagboek en persoonlijke rust."),
++        new(FeatureKind.CaregiverSpace, "Begeleidersruimte", "🤝", "Omgevingen", "Eigen werknotities, overdrachtstaken en bewust gedeelde informatie."),
++        new(FeatureKind.ParentGuardianSpace, "Ouders / voogden", "🏡", "Omgevingen", "Eigen familieplanning, gesprekspunten en gedeelde informatie.")
+     };
+ 
+     public static FeatureCatalogItem Get(FeatureKind kind) => All.First(x => x.Kind == kind);
+--- a/MijnGevoel-Android/MijnGevoel.Android/FeaturePage.cs
++++ b/MijnGevoel-Android/MijnGevoel.Android/FeaturePage.cs
+@@ -162,6 +162,7 @@
+ 
+     static string TitleFor(FeatureKind kind) => kind switch
+     {
++        FeatureKind.PersonalSpace => "Mijn ruimte", FeatureKind.CaregiverSpace => "Begeleidersruimte", FeatureKind.ParentGuardianSpace => "Ouders / voogden",
+         FeatureKind.Stoplicht => "Mijn stoplicht", FeatureKind.DayToday => "Vandaag", FeatureKind.DayTomorrow => "Morgen",
+         FeatureKind.Agenda => "Agenda", FeatureKind.Timer => "Timer", FeatureKind.Routines => "Stappenplannen", FeatureKind.RoutineReminders => "Routines en herinneringen",
+         FeatureKind.Breath => "Ademhalen", FeatureKind.Calm => "Rustplek", FeatureKind.Sensory => "Prikkelmeter",
+@@ -177,6 +178,18 @@
+     void Build()
+     {
+         _root.Children.Clear();
++        if (!WorkspaceRoleService.CanAccessFeature(AppSession.Settings.WorkspaceRole, _kind.ToString()))
++        {
++            Header("Deze functie staat niet in deze omgeving", "Je hebt de ruimte voor ouders/voogden of begeleiders gekozen. Je kunt wel bewust gedeelde informatie bekijken; privégegevens van een ander account verschijnen niet automatisch.");
++            AddButton("🧭 Open mijn omgeving", () => Navigation.PushAsync(new WorkspacePage()), quiet: true);
++            AddButton("💙 Naar mijn persoonlijke omgeving", async () =>
++            {
++                WorkspaceRoleService.SetRole(AppSession.Settings, WorkspaceRoleService.Personal);
++                AppSession.SaveSettings();
++                await Navigation.PushAsync(new WorkspacePage());
++            }, quiet: true);
++            return;
++        }
+         switch (_kind)
+         {
+             case FeatureKind.Stoplicht: BuildStoplicht(); break;
+@@ -213,6 +226,12 @@
+             case FeatureKind.Privacy: BuildPrivacy(); break;
+             case FeatureKind.Week: BuildWeek(); break;
+             case FeatureKind.Settings: BuildSettings(); break;
++            case FeatureKind.PersonalSpace:
++                AddAsyncButton("💙 Open mijn ruimte", async () => await Navigation.PushAsync(new WorkspacePage(WorkspaceRoleService.Personal))); break;
++            case FeatureKind.CaregiverSpace:
++                AddAsyncButton("🤝 Open begeleidersruimte", async () => await Navigation.PushAsync(new WorkspacePage(WorkspaceRoleService.Caregiver))); break;
++            case FeatureKind.ParentGuardianSpace:
++                AddAsyncButton("🏡 Open ouders-/voogdenruimte", async () => await Navigation.PushAsync(new WorkspacePage(WorkspaceRoleService.ParentGuardian))); break;
+             default: BuildHelp(); break;
+         }
+     }
+@@ -321,6 +340,12 @@
+         var text = AppUi.Editor("Schrijf hier…", height: 180);
+         AddField("Tekst", text);
+         var status = AppUi.Label("");
++        AddAsyncButton("🎙️ Tekst inspreken", async () =>
++        {
++            var spoken = await SpeechInput.ListenAsync();
++            if (string.IsNullOrWhiteSpace(spoken)) status.Text = "Geen tekst herkend. Je kunt opnieuw proberen of typen.";
++            else { text.Text = string.IsNullOrWhiteSpace(text.Text) ? spoken : text.Text.TrimEnd() + " " + spoken; status.Text = "Tekst herkend. Lees de tekst na en pas hem aan voordat je bewaart."; }
++        }, quiet: true);
+         Guid? current = null;
+         _voiceContext = kind;
+         var voiceHelp = AppUi.Label("Je kunt ook een kort spraakbericht opnemen. Je opname wordt versleuteld op deze telefoon bewaard en niet verstuurd.", muted: true);
+@@ -2629,6 +2654,7 @@
+         AddField("Mijn profiel", profile);
+         AddLabel("Kind: grote gevoel-/communicatie-ingangen en een voorspelbare dag.
+Jongere: stress, grenzen, school, vrienden en gesprekshulp.
+Volwassene: werk, dagbesteding, energie en persoonlijke doelen.
+Algemeen: alle bestaande functies zonder persoonlijk voorkeursprofiel.");
+         AddAsyncButton("💾 Profiel bewaren", async () => { AppSession.Settings.AudienceProfile = profile.SelectedItem?.ToString() ?? "Algemeen"; AppSession.SaveSettings(); await DisplayAlertAsync("Opgeslagen", "Je profiel is opgeslagen. Ga terug naar het startscherm voor de passende snelkoppelingen.", "OK"); });
++        AddButton("🧭 Mijn omgeving kiezen", () => Navigation.PushAsync(new WorkspacePage()), quiet:true);
+         AddButton("⚙️ Toegankelijkheid aanpassen", () => Navigation.PushAsync(new FeaturePage(FeatureKind.Settings)), quiet:true);
+     }
