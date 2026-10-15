@@ -1,7 +1,7 @@
-diff --git a/MijnGevoel.Android/FeaturePage.cs b/MijnGevoel.Android/FeaturePage.cs
+diff --git a/MijnGevoel-Android/MijnGevoel.Android/FeaturePage.cs b/MijnGevoel-Android/MijnGevoel.Android/FeaturePage.cs
 index 709ab83..9982e6f 100644
---- a/MijnGevoel.Android/FeaturePage.cs
-+++ b/MijnGevoel.Android/FeaturePage.cs
+--- a/MijnGevoel-Android/MijnGevoel.Android/FeaturePage.cs
++++ b/MijnGevoel-Android/MijnGevoel.Android/FeaturePage.cs
 @@ -1644,6 +1644,46 @@ public sealed partial class FeaturePage : ContentPage
          Add(moodGrid);
          Add(selectedLabel);
@@ -69,10 +69,10 @@ index 709ab83..9982e6f 100644
              }
              Store.Save("moodcheckin", item.Id, item);
              AppSession.Touch();
-diff --git a/MijnGevoel.Core/Data/Models.cs b/MijnGevoel.Core/Data/Models.cs
+diff --git a/MijnGevoel-Android/MijnGevoel.Core/Data/Models.cs b/MijnGevoel-Android/MijnGevoel.Core/Data/Models.cs
 index f0445a1..55589db 100644
---- a/MijnGevoel.Core/Data/Models.cs
-+++ b/MijnGevoel.Core/Data/Models.cs
+--- a/MijnGevoel-Android/MijnGevoel.Core/Data/Models.cs
++++ b/MijnGevoel-Android/MijnGevoel.Core/Data/Models.cs
 @@ -5,7 +5,11 @@ public record JournalEntry(Guid Id, DateTime Created, int Mood, string Text);
  /// <summary>De vier herkenbare gevoelens voor snelle, visuele invoer.</summary>
  public record FourGFeelingEntry(Guid Id, DateTime Created, string Feeling);
