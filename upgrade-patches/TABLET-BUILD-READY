@@ -11,3 +11,5 @@ Retry after platform-specific project metadata patch fix.
 Rebuild tablet using latest patch filtering and checksum workflow.
 
 Rebuild after consolidated Android workflow repair.
+
+Retry after targeted Windows patch and identity fixes.
