@@ -1,4 +1,4 @@
-name: MoodPress 3.1.0 - apply patches, test, Android APK
+name: MoodPress 3.2.0 - apply patches, test, Android APK
 on:
   workflow_dispatch:
   push:
@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: moodpress-3.1.0-upgrade
+  group: moodpress-3.2.0-upgrade
   cancel-in-progress: false
 
 jobs:
@@ -67,6 +67,17 @@ jobs:
           test -f upgrade-patches/07-fix-pdf-date-nullability.patch
           (cd source && patch --batch --forward -p1 < ../upgrade-patches/07-fix-pdf-date-nullability.patch)
 
+          # Incremental 3.2.0 voice-output upgrade.
+          test "$(find upgrade-patches -maxdepth 1 -type f -name '08-part-*.b64' | wc -l)" -eq 2
+          cat upgrade-patches/08-part-*.b64 > /tmp/moodpress-3.2.0.patch.gz.b64
+          base64 --decode /tmp/moodpress-3.2.0.patch.gz.b64 > /tmp/moodpress-3.2.0.patch.gz
+          echo 'dbdc02380d0471ea518b88cf92ad3393ff333197413540e7cd86a750da1b3330  /tmp/moodpress-3.2.0.patch.gz' | sha256sum -c -
+          gzip --decompress --stdout /tmp/moodpress-3.2.0.patch.gz > /tmp/moodpress-3.2.0.patch
+          (cd source && patch --batch --forward -p1 < /tmp/moodpress-3.2.0.patch)
+
+          test -f source/MijnGevoel-Android/MijnGevoel.Android/SpeechOutput.cs
+          test -f source/MijnGevoel-Android/RELEASE-NOTES-3.2.0.md
+          test -f source/MijnGevoel-Android/docs/quality/VOICE-ACCESSIBILITY-3.2.0.md
           test -f source/MijnGevoel-Android/MijnGevoel.Core/Data/WorkspaceReportService.cs
           test -f source/MijnGevoel-Android/MijnGevoel.Tests/WorkspaceReportServiceTests.cs
           test -f source/MijnGevoel-Android/RELEASE-NOTES-3.1.0.md
@@ -85,7 +96,7 @@ jobs:
               values=[e.text or '' for e in tree.iter(name)]
               return values[-1] if values else None
           actual=(prop('TargetFramework'),prop('ApplicationId'),prop('ApplicationTitle'),prop('ApplicationDisplayVersion'),prop('ApplicationVersion'))
-          expected=('net10.0-android','nl.mijngevoel.app','MoodPress','3.1.0','36')
+          expected=('net10.0-android','nl.mijngevoel.app','MoodPress','3.2.0','37')
           if actual != expected: raise SystemExit(f'Versieconfiguratie: gevonden {actual}, verwacht {expected}')
           dashboard=(root/'MijnGevoel.Android/DashboardPage.cs').read_text(encoding='utf-8')
           match=re.search(r'public enum FeatureKind\s*\{([^}]+)\}',dashboard,re.S)
@@ -100,23 +111,23 @@ jobs:
               raise SystemExit('Er ontbreken omgevingen in FeatureKind')
           for name in ['WorkspaceRoleService.cs','WorkspaceRecordService.cs','WorkspaceModels.cs','WorkspaceReportService.cs']:
               if not (root/'MijnGevoel.Core/Data'/name).is_file(): raise SystemExit(f'Ontbreekt: {name}')
-          for name in ['WorkspacePage.cs','SpeechInput.cs']:
+          for name in ['WorkspacePage.cs','SpeechInput.cs','SpeechOutput.cs']:
               if not (root/'MijnGevoel.Android'/name).is_file(): raise SystemExit(f'Ontbreekt: {name}')
-          for p in ['MijnGevoel.Tests/WorkspaceReportServiceTests.cs','RELEASE-NOTES-3.1.0.md','docs/quality/WORKSPACES-3.1.0.md']:
+          for p in ['MijnGevoel.Tests/WorkspaceReportServiceTests.cs','RELEASE-NOTES-3.1.0.md','docs/quality/WORKSPACES-3.1.0.md','RELEASE-NOTES-3.2.0.md','docs/quality/VOICE-ACCESSIBILITY-3.2.0.md']:
               if not (root/p).is_file(): raise SystemExit(f'Ontbreekt: {p}')
           report_ui=(root/'MijnGevoel.Android/WorkspacePage.cs').read_text(encoding='utf-8')
           if 'var reportStart = (startDate.Date ??' not in report_ui or 'endDate.Date.Date' in report_ui:
               raise SystemExit('Nullable datumcontrole voor PDF rapport is niet correct.')
           print(f'Statische controles geslaagd voor MoodPress {actual[3]} met {len(entries)} features.')
           PY
-          (cd source && zip -qr -X ../MoodPress-Android-compleet-3.1.0.zip MijnGevoel-Android)
-          unzip -t MoodPress-Android-compleet-3.1.0.zip
+          (cd source && zip -qr -X ../MoodPress-Android-compleet-3.2.0.zip MijnGevoel-Android)
+          unzip -t MoodPress-Android-compleet-3.2.0.zip
 
       - name: Upload de bijgewerkte broncode, ook als een volgende stap faalt
         uses: actions/upload-artifact@v4
         with:
-          name: MoodPress-Android-compleet-3.1.0-source
-          path: MoodPress-Android-compleet-3.1.0.zip
+          name: MoodPress-Android-compleet-3.2.0-source
+          path: MoodPress-Android-compleet-3.2.0.zip
           if-no-files-found: error
           retention-days: 14
 
@@ -165,14 +176,14 @@ jobs:
           test -n "$apk" && test -f "$apk"
           unzip -t "$apk"
           mkdir -p artifacts
-          cp "$apk" artifacts/MoodPress-Android-3.1.0-debug.apk
-          cp MoodPress-Android-compleet-3.1.0.zip artifacts/
-          (cd artifacts && sha256sum MoodPress-Android-3.1.0-debug.apk MoodPress-Android-compleet-3.1.0.zip > SHA256SUMS.txt)
+          cp "$apk" artifacts/MoodPress-Android-3.2.0-debug.apk
+          cp MoodPress-Android-compleet-3.2.0.zip artifacts/
+          (cd artifacts && sha256sum MoodPress-Android-3.2.0-debug.apk MoodPress-Android-compleet-3.2.0.zip > SHA256SUMS.txt)
 
       - name: Upload test APK and checksums
         uses: actions/upload-artifact@v4
         with:
-          name: MoodPress-Android-3.1.0-test-apk
+          name: MoodPress-Android-3.2.0-test-apk
           path: artifacts/
           if-no-files-found: error
           retention-days: 14
@@ -182,16 +193,16 @@ jobs:
     needs: upgrade-and-build
     runs-on: windows-latest
     steps:
-      - name: Download the same validated 3.1.0 source archive
+      - name: Download the same validated 3.2.0 source archive
         uses: actions/download-artifact@v4
         with:
-          name: MoodPress-Android-compleet-3.1.0-source
+          name: MoodPress-Android-compleet-3.2.0-source
           path: incoming
 
       - name: Unpack the validated source archive
         shell: pwsh
         run: |
-          $archive = Join-Path $PWD "incoming/MoodPress-Android-compleet-3.1.0.zip"
+          $archive = Join-Path $PWD "incoming/MoodPress-Android-compleet-3.2.0.zip"
           if (!(Test-Path $archive)) { throw "Validated source archive is missing: $archive" }
           Expand-Archive -LiteralPath $archive -DestinationPath "$PWD/source" -Force
           if (!(Test-Path "$PWD/source/MijnGevoel-Android/MijnGevoel.Desktop/MijnGevoel.Desktop.csproj")) { throw "Desktop project not found." }
@@ -221,12 +232,12 @@ jobs:
           $publish = "MijnGevoel.Desktop/bin/Release/net8.0-windows/win-x64/publish"
           if (!(Test-Path "$publish/MoodPress.exe")) { throw "Expected MoodPress.exe was not created." }
           New-Item -ItemType Directory -Path "$PWD/artifacts" -Force | Out-Null
-          Compress-Archive -Path "$publish/*" -DestinationPath "$PWD/artifacts/MoodPress-Windows-3.1.0-portable.zip" -Force
+          Compress-Archive -Path "$publish/*" -DestinationPath "$PWD/artifacts/MoodPress-Windows-3.2.0-portable.zip" -Force
 
       - name: Upload Windows portable build
         uses: actions/upload-artifact@v4
         with:
-          name: MoodPress-Windows-3.1.0-portable
-          path: source/MijnGevoel-Android/artifacts/MoodPress-Windows-3.1.0-portable.zip
+          name: MoodPress-Windows-3.2.0-portable
+          path: source/MijnGevoel-Android/artifacts/MoodPress-Windows-3.2.0-portable.zip
           if-no-files-found: error
           retention-days: 14
