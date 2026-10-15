@@ -13,3 +13,5 @@ Rebuild after consolidated Android workflow repair.
 Run current repaired signed phone and tablet release workflow.
 
 Retry after targeted Windows patch and identity fixes.
+
+Retry with shared Windows feature patch applied and only metadata hunk tolerated.
