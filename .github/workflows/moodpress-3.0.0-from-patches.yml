@@ -84,23 +84,24 @@ jobs:
           base64 --decode /tmp/moodpress-windows-3.3.0.patch.gz.b64 > /tmp/moodpress-windows-3.3.0.patch.gz
           echo '323bf5a1fafae932fb44782c3b329760e36094415e05b967bba4b1d23913d927  /tmp/moodpress-windows-3.3.0.patch.gz' | sha256sum -c -
           gzip --decompress --stdout /tmp/moodpress-windows-3.3.0.patch.gz > /tmp/moodpress-windows-3.3.0.patch
-          python3 - <<'PY'
-          from pathlib import Path
-          import re
-          p=Path('/tmp/moodpress-windows-3.3.0.patch')
-          data=p.read_text(encoding='utf-8')
-          target='MijnGevoel-Android/MijnGevoel.Android/MijnGevoel.Android.csproj'
-          if re.search(r'^diff --git ', data, re.M):
-              sections=re.split(r'(?=^diff --git )', data, flags=re.M)
-              filtered=[section for section in sections if target not in section]
-          else:
-              sections=re.split(r'(?=^--- a/)', data, flags=re.M)
-              filtered=[section for section in sections if target not in '\n'.join(section.splitlines()[:4])]
-          if len(filtered)==len(sections):
-              raise SystemExit('Android project section not found in Windows patch')
-          p.write_text(''.join(filtered),encoding='utf-8')
-          PY
+          # This shared patch includes one Android package-version hunk that is phone-specific.
+          # Apply all shared features; tolerate only that expected project-file reject, then set identity below.
+          set +e
           (cd source && patch --batch --forward -p1 < /tmp/moodpress-windows-3.3.0.patch)
+          patch_status=$?
+          set -e
+          project_reject='source/MijnGevoel-Android/MijnGevoel.Android/MijnGevoel.Android.csproj.rej'
+          other_reject="$(find source -type f -name '*.rej' ! -path "$project_reject" -print -quit)"
+          if [[ -n "$other_reject" ]]; then
+            echo "Unexpected patch reject: $other_reject" >&2
+            exit 1
+          fi
+          if [[ -f "$project_reject" ]]; then
+            rm -f "$project_reject"
+          elif [[ "$patch_status" -ne 0 ]]; then
+            echo "Windows feature patch failed without the expected project metadata reject" >&2
+            exit "$patch_status"
+          fi
           python3 - <<'PY'
           from pathlib import Path
           import re
