@@ -1,0 +1,64 @@
+name: Inspect MoodPress iOS source for parity work
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/complete-accessible-upgrade
+    paths:
+      - 'upgrade-patches/IOS-INSPECT-READY'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect-ios:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@v4
+      - name: Validate and unpack current iOS source archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive='MoodPress-iOS-compleet-2.3.2.zip'
+          test -f "$archive" || { echo "Missing $archive" >&2; exit 1; }
+          unzip -t "$archive"
+          mkdir -p source artifacts
+          unzip -q "$archive" -d source
+          root='source/MijnGevoel-Android'
+          test -f "$root/MijnGevoel.Android/MoodPress.iOS.csproj"
+          test -f "$root/MijnGevoel.Core/MijnGevoel.Core.csproj"
+          test -f "$root/MijnGevoel.Tests/MijnGevoel.Tests.csproj"
+          find "$root" -type f | sort > artifacts/IOS-FILE-INVENTORY.txt
+          {
+            for f in \
+              MijnGevoel.Android/MoodPress.iOS.csproj \
+              MijnGevoel.Android/App.xaml.cs \
+              MijnGevoel.Android/DashboardPage.cs \
+              MijnGevoel.Android/MorePage.cs \
+              MijnGevoel.Android/FeatureCatalog.cs \
+              MijnGevoel.Android/FeaturePage.cs \
+              MijnGevoel.Android/AppUi.cs \
+              MijnGevoel.Android/AppSession.cs \
+              MijnGevoel.Android/SupportPackagePages.cs \
+              MijnGevoel.Android/WorkspacePage.cs \
+              MijnGevoel.Core/Data/Models.cs \
+              MijnGevoel.Core/Data/VaultStore.cs \
+              MijnGevoel.Core/Data/ExportService.cs \
+              MijnGevoel.Core/Data/SupportShareService.cs \
+              MijnGevoel.Core/Data/FeatureVisibilityService.cs \
+              MijnGevoel.Core/Data/BackupService.cs; do
+              if [ -f "$root/$f" ]; then
+                printf '\n\n================ %s ================\n' "$f"
+                sed -n '1,300p' "$root/$f"
+              fi
+            done
+          } > artifacts/IOS-KEY-SOURCE-FILES.txt
+          (cd source && zip -qr -X "$GITHUB_WORKSPACE/artifacts/MoodPress-iOS-2.3.2-unpacked-source.zip" MijnGevoel-Android)
+      - name: Upload iOS source inspection bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: moodpress-ios-source-inspection
+          path: artifacts/
+          if-no-files-found: error
+          retention-days: 7
