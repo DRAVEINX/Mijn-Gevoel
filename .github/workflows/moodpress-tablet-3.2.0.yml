@@ -1,0 +1,154 @@
+name: MoodPress Tablet 3.2.0 - parity, tests, APK
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/complete-accessible-upgrade
+    paths:
+      - 'upgrade-patches/TABLET-BUILD-READY'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: moodpress-tablet-3.2.0
+  cancel-in-progress: false
+
+jobs:
+  tablet-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout feature branch and source patches
+        uses: actions/checkout@v4
+
+      - name: Validate and unpack tablet source archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          unzip -t 'MoodPress-Android-Tablet-2.5.2.zip'
+          mkdir -p source
+          unzip -q 'MoodPress-Android-Tablet-2.5.2.zip' -d source
+          test -f source/MijnGevoel-Android/MijnGevoel.Android/MijnGevoel.Android.csproj
+          test -f source/MijnGevoel-Android/MijnGevoel.Core/MijnGevoel.Core.csproj
+          test -f source/MijnGevoel-Android/MijnGevoel.Tests/MijnGevoel.Tests.csproj
+
+      - name: Apply shared workspace, speech and Windows features
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat upgrade-patches/01-android-navigation.patch \
+              upgrade-patches/02a-android-speech.patch \
+              upgrade-patches/02b-android-workspace.patch \
+              upgrade-patches/03-core-workspaces.patch \
+              upgrade-patches/04-tests-version-home.patch \
+              upgrade-patches/05-desktop-workspace.patch > /tmp/moodpress-base-3.0.0.patch
+          (cd source && patch --batch --forward -p1 < /tmp/moodpress-base-3.0.0.patch)
+
+      - name: Apply PDF reporting and speech-output upgrades
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(find upgrade-patches -maxdepth 1 -type f -name '06-part-*.b64' | wc -l)" -eq 7
+          cat upgrade-patches/06-part-*.b64 > /tmp/moodpress-3.1.0.patch.gz.b64
+          base64 --decode /tmp/moodpress-3.1.0.patch.gz.b64 > /tmp/moodpress-3.1.0.patch.gz
+          echo 'ac4597e1e1ee71f5288cbba0789e2935e94228540449eb5b5b7305a24e850d1e  /tmp/moodpress-3.1.0.patch.gz' | sha256sum -c -
+          gzip --decompress --stdout /tmp/moodpress-3.1.0.patch.gz > /tmp/moodpress-3.1.0.patch
+          (cd source && patch --batch --forward -p1 < /tmp/moodpress-3.1.0.patch)
+          (cd source && patch --batch --forward -p1 < ../upgrade-patches/07-fix-pdf-date-nullability.patch)
+
+          test "$(find upgrade-patches -maxdepth 1 -type f -name '08-part-*.b64' | wc -l)" -eq 2
+          cat upgrade-patches/08-part-*.b64 > /tmp/moodpress-3.2.0.patch.gz.b64
+          base64 --decode /tmp/moodpress-3.2.0.patch.gz.b64 > /tmp/moodpress-3.2.0.patch.gz
+          echo 'dbdc02380d0471ea518b88cf92ad3393ff333197413540e7cd86a750da1b3330  /tmp/moodpress-3.2.0.patch.gz' | sha256sum -c -
+          gzip --decompress --stdout /tmp/moodpress-3.2.0.patch.gz > /tmp/moodpress-3.2.0.patch
+          (cd source && patch --batch --forward -p1 < /tmp/moodpress-3.2.0.patch)
+          (cd source && patch --batch --forward -p1 < ../upgrade-patches/09-fix-tts-cancellation.patch)
+
+      - name: Set tablet package identity and validate features
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          root=Path('source/MijnGevoel-Android')
+          project=root/'MijnGevoel.Android/MijnGevoel.Android.csproj'
+          s=project.read_text(encoding='utf-8')
+          for tag,value in {
+            'ApplicationId':'nl.mijngevoel.app.tablet',
+            'ApplicationTitle':'MoodPress Tablet',
+            'ApplicationDisplayVersion':'3.2.0',
+            'ApplicationVersion':'37',
+          }.items():
+            pattern=rf'<{tag}>.*?</{tag}>'
+            if not re.search(pattern,s,re.S):
+              raise SystemExit(f'Missing project property {tag}')
+            s=re.sub(pattern,f'<{tag}>{value}</{tag}>',s,count=1,flags=re.S)
+          project.write_text(s,encoding='utf-8')
+          required=[
+            'MijnGevoel.Core/Data/WorkspaceRoleService.cs',
+            'MijnGevoel.Core/Data/WorkspaceRecordService.cs',
+            'MijnGevoel.Core/Data/WorkspaceReportService.cs',
+            'MijnGevoel.Android/WorkspacePage.cs',
+            'MijnGevoel.Android/SpeechInput.cs',
+            'MijnGevoel.Android/SpeechOutput.cs',
+            'MijnGevoel.Tests/WorkspaceReportServiceTests.cs',
+            'RELEASE-NOTES-3.2.0.md',
+            'docs/quality/WORKSPACES-3.1.0.md',
+          ]
+          missing=[f for f in required if not (root/f).is_file()]
+          if missing: raise SystemExit('Missing feature files: '+', '.join(missing))
+          print('Tablet package identity and feature file inventory validated.')
+          PY
+
+      - name: Set up .NET SDKs
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - name: Install Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: microsoft
+          java-version: '17'
+
+      - name: Install MAUI Android workload
+        run: dotnet workload install maui-android
+
+      - name: Run Core regression tests
+        working-directory: source/MijnGevoel-Android
+        run: |
+          set -euo pipefail
+          dotnet restore MijnGevoel.Tests/MijnGevoel.Tests.csproj
+          dotnet test MijnGevoel.Tests/MijnGevoel.Tests.csproj --configuration Release --no-restore --logger "console;verbosity=normal"
+
+      - name: Build Android tablet Debug APK
+        working-directory: source/MijnGevoel-Android
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet restore MijnGevoel.Android/MijnGevoel.Android.csproj
+          dotnet publish MijnGevoel.Android/MijnGevoel.Android.csproj \
+            --configuration Debug \
+            --framework net10.0-android \
+            -p:AndroidPackageFormat=apk \
+            -p:ApplicationId=nl.mijngevoel.app.tablet.debug \
+            "-p:ApplicationTitle=MoodPress Tablet Test"
+          output='MijnGevoel.Android/bin/Debug/net10.0-android'
+          apk="$(find "$output" -type f -iname '*.apk' -printf '%T@ %p\n' | sort -nr | head -n 1 | cut -d' ' -f2-)"
+          test -n "$apk" && test -f "$apk"
+          unzip -t "$apk"
+          mkdir -p artifacts
+          cp "$apk" artifacts/MoodPress-Android-Tablet-3.2.0-debug.apk
+          (cd source/MijnGevoel-Android && zip -qr -X ../../artifacts/MoodPress-Android-Tablet-compleet-3.2.0.zip .)
+          (cd artifacts && sha256sum MoodPress-Android-Tablet-3.2.0-debug.apk MoodPress-Android-Tablet-compleet-3.2.0.zip > SHA256SUMS.txt)
+
+      - name: Upload tablet APK, source and checksums
+        uses: actions/upload-artifact@v4
+        with:
+          name: MoodPress-Android-Tablet-3.2.0-test
+          path: artifacts/
+          if-no-files-found: error
+          retention-days: 14
