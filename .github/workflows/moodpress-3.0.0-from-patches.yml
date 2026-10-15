@@ -114,6 +114,8 @@ jobs:
           (cd source && patch --batch --forward -p1 < ../upgrade-patches/14-compose-communication.patch)
           test -f upgrade-patches/15-cant-explain-feeling.patch
           (cd source && patch --batch --forward -p1 < ../upgrade-patches/15-cant-explain-feeling.patch)
+          test -f upgrade-patches/16-home-calm-shortcut.patch
+          (cd source && patch --batch --forward -p1 < ../upgrade-patches/16-home-calm-shortcut.patch)
 
           test -f source/MijnGevoel-Android/MijnGevoel.Android/SpeechOutput.cs
           test -f source/MijnGevoel-Android/MijnGevoel.Desktop/DesktopSpeechInput.cs
