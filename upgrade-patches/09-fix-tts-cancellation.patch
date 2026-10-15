@@ -1,8 +1,6 @@
 --- a/MijnGevoel-Android/MijnGevoel.Android/SpeechOutput.cs
 +++ b/MijnGevoel-Android/MijnGevoel.Android/SpeechOutput.cs
-@@ -3,17 +3,37 @@
- namespace MijnGevoel.AndroidApp;
- 
+@@ -5,14 +5,38 @@
  /// <summary>Reads user-selected text aloud for people who find reading difficult.</summary>
  public static class SpeechOutput
  {
