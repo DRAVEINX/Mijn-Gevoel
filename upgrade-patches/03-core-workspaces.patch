@@ -1,0 +1,181 @@
+--- a/MijnGevoel-Android/MijnGevoel.Core/Data/FeatureVisibilityService.cs
++++ b/MijnGevoel-Android/MijnGevoel.Core/Data/FeatureVisibilityService.cs
+@@ -8,7 +8,7 @@
+         if (string.IsNullOrWhiteSpace(featureKey)) return false;
+         // Keep the weekly supporter rota discoverable for existing users whose older settings
+         // predate the newer, optional feature catalog. It can therefore never disappear by accident.
+-        if (string.Equals(featureKey, "WhoWorks", StringComparison.Ordinal)) return true;
++        if (featureKey is "WhoWorks" or "PersonalSpace" or "CaregiverSpace" or "ParentGuardianSpace") return true;
+         if (settings is null || !settings.FeatureVisibilityConfigured) return true;
+         return settings.EnabledFeatures?.Contains(featureKey, StringComparer.Ordinal) == true;
+     }
+--- a/MijnGevoel-Android/MijnGevoel.Core/Data/Models.cs
++++ b/MijnGevoel-Android/MijnGevoel.Core/Data/Models.cs
+@@ -49,6 +49,8 @@
+     public bool HomeShortcutsConfigured { get; set; }
+     /// <summary>Persoonlijk interfaceprofiel: Kind, Jongere, Volwassene of Algemeen.</summary>
+     public string AudienceProfile { get; set; } = "Algemeen";
++    /// <summary>Locally selected interface workspace: Gebruiker, Begeleider or Ouder/voogd. It does not authorize access to another account.</summary>
++    public string WorkspaceRole { get; set; } = WorkspaceRoleService.Personal;
+ }
+ 
+ /// <summary>Stoplicht: Colour = Groen | Oranje | Rood. Reasons/Needs zijn de gekozen pictogram-teksten.</summary>
+--- /dev/null
++++ b/MijnGevoel-Android/MijnGevoel.Core/Data/WorkspaceRoleService.cs
+@@ -0,0 +1,57 @@
++namespace MijnGevoel.Core.Data;
++
++/// <summary>Recognized local workspace modes. These modes organize this account's interface; they do not grant access to another account.</summary>
++public static class WorkspaceRoleService
++{
++    public const string Personal = "Gebruiker";
++    public const string Caregiver = "Begeleider";
++    public const string ParentGuardian = "Ouder/voogd";
++
++    public static IReadOnlyList<string> Roles { get; } = new[] { Personal, Caregiver, ParentGuardian };
++
++    static readonly HashSet<string> SharedWorkspaceFeatures = new(StringComparer.Ordinal)
++    {
++        "PersonalSpace", "CaregiverSpace", "ParentGuardianSpace", "Profile", "Settings", "Privacy", "Help"
++    };
++
++    // Support accounts can plan their own work, manage an explicitly shared package, and use local support tools.
++    // They cannot browse another person's private diary, drawings, feelings history, or private check-ins.
++    static readonly HashSet<string> SupportWorkspaceFeatures = new(StringComparer.Ordinal)
++    {
++        "Agenda", "DayToday", "DayTomorrow", "Timer", "Routines", "RoutineReminders", "ChildSchedule",
++        "WhoWorks", "ReceiveSupport", "SafetyPlan", "AdultPlanning", "Wellbeing", "Week", "TalkPrep", "Notes", "Cards", "Calm", "Breath"
++    };
++
++    public static string Normalize(string? role)
++    {
++        var value = (role ?? string.Empty).Trim();
++        return Roles.FirstOrDefault(x => string.Equals(x, value, StringComparison.OrdinalIgnoreCase)) ?? Personal;
++    }
++
++    public static bool IsKnownRole(string? role) => Roles.Contains(Normalize(role), StringComparer.Ordinal) &&
++        !string.IsNullOrWhiteSpace(role) && string.Equals(Normalize(role), role.Trim(), StringComparison.OrdinalIgnoreCase);
++
++    public static string Description(string? role) => Normalize(role) switch
++    {
++        Caregiver => "Plan je begeleiding, houd eigen taken en overdrachten bij en bekijk uitsluitend informatie die bewust met jou is gedeeld.",
++        ParentGuardian => "Houd afspraken, vragen en eigen steunnotities bij. Informatie van je kind of naaste verschijnt alleen wanneer die bewust met jou is gedeeld.",
++        _ => "Leg je gevoelens vast met tekst, spraak, tekeningen en eenvoudige hulpmiddelen. Jij kiest wat je bewaart en deelt."
++    };
++
++    /// <summary>Presentation guard for feature navigation. Real separation between people comes from separate accounts and explicit encrypted share packages.</summary>
++    public static bool CanAccessFeature(string? role, string? featureKey)
++    {
++        if (string.IsNullOrWhiteSpace(featureKey)) return false;
++        if (Normalize(role) == Personal) return true;
++        return SharedWorkspaceFeatures.Contains(featureKey) || SupportWorkspaceFeatures.Contains(featureKey);
++    }
++
++    public static bool SetRole(UserSettings settings, string? role)
++    {
++        ArgumentNullException.ThrowIfNull(settings);
++        var normalized = Normalize(role);
++        bool changed = !string.Equals(settings.WorkspaceRole, normalized, StringComparison.Ordinal);
++        settings.WorkspaceRole = normalized;
++        return changed;
++    }
++}
+--- /dev/null
++++ b/MijnGevoel-Android/MijnGevoel.Core/Data/WorkspaceModels.cs
+@@ -0,0 +1,10 @@
++namespace MijnGevoel.Core.Data;
++
++/// <summary>A local note owned by one workspace. Stored through VaultStore, never synchronized automatically.</summary>
++public record WorkspaceNote(Guid Id, DateTime Created, string WorkspaceRole, string Category, string Title, string Text, bool Pinned = false);
++
++/// <summary>A local task/appointment reminder belonging to one workspace.</summary>
++public record WorkspaceTask(Guid Id, DateTime Created, DateTime? DueDate, string WorkspaceRole, string Title, string Details, bool Completed = false);
++
++/// <summary>A draft family update. It is explicitly a local draft until the author exports/shares it themselves.</summary>
++public record FamilyUpdateEntry(Guid Id, DateTime Created, string WorkspaceRole, string Title, string Message, string Status = "Concept");
+--- /dev/null
++++ b/MijnGevoel-Android/MijnGevoel.Core/Data/WorkspaceRecordService.cs
+@@ -0,0 +1,71 @@
++namespace MijnGevoel.Core.Data;
++
++/// <summary>Validation and local encrypted persistence for workspace notes, tasks, and parent/guardian update drafts.</summary>
++public static class WorkspaceRecordService
++{
++    public static WorkspaceNote CreateNote(Guid id, DateTime created, string? role, string? category, string? title, string? text, bool pinned = false)
++    {
++        if (id == Guid.Empty) throw new ArgumentException("Een notitie heeft een geldig ID nodig.", nameof(id));
++        var normalizedRole = RequireRole(role);
++        var safeTitle = RequiredText(title, 120, nameof(title));
++        var safeText = (text ?? string.Empty).Trim();
++        if (safeText.Length > 8_000) throw new ArgumentException("De notitie mag maximaal 8.000 tekens bevatten.", nameof(text));
++        if (safeText.Length == 0) throw new ArgumentException("Schrijf eerst iets op.", nameof(text));
++        var safeCategory = (category ?? "Notitie").Trim();
++        if (safeCategory.Length == 0) safeCategory = "Notitie";
++        if (safeCategory.Length > 80) throw new ArgumentException("De categorie is te lang.", nameof(category));
++        return new WorkspaceNote(id, created, normalizedRole, safeCategory, safeTitle, safeText, pinned);
++    }
++
++    public static WorkspaceTask CreateTask(Guid id, DateTime created, DateTime? dueDate, string? role, string? title, string? details)
++    {
++        if (id == Guid.Empty) throw new ArgumentException("Een taak heeft een geldig ID nodig.", nameof(id));
++        var normalizedRole = RequireRole(role);
++        var safeTitle = RequiredText(title, 120, nameof(title));
++        var safeDetails = (details ?? string.Empty).Trim();
++        if (safeDetails.Length > 4_000) throw new ArgumentException("De taaknotitie mag maximaal 4.000 tekens bevatten.", nameof(details));
++        return new WorkspaceTask(id, created, dueDate?.Date, normalizedRole, safeTitle, safeDetails);
++    }
++
++    public static FamilyUpdateEntry CreateFamilyUpdate(Guid id, DateTime created, string? role, string? title, string? message)
++    {
++        if (id == Guid.Empty) throw new ArgumentException("Een update heeft een geldig ID nodig.", nameof(id));
++        var normalizedRole = RequireRole(role);
++        if (normalizedRole != WorkspaceRoleService.ParentGuardian)
++            throw new InvalidOperationException("Concept-updates voor familie zijn alleen beschikbaar in de ruimte voor ouders en voogden.");
++        var safeTitle = RequiredText(title, 120, nameof(title));
++        var safeMessage = RequiredText(message, 8_000, nameof(message));
++        return new FamilyUpdateEntry(id, created, normalizedRole, safeTitle, safeMessage, "Concept — niet gedeeld");
++    }
++
++    public static IReadOnlyList<WorkspaceNote> GetNotes(VaultStore store, string? role) =>
++        store.All<WorkspaceNote>("workspacenote").Where(x => x is not null && x.WorkspaceRole == WorkspaceRoleService.Normalize(role))
++            .OrderByDescending(x => x.Pinned).ThenByDescending(x => x.Created).ToArray();
++
++    public static IReadOnlyList<WorkspaceTask> GetTasks(VaultStore store, string? role) =>
++        store.All<WorkspaceTask>("workspacetask").Where(x => x is not null && x.WorkspaceRole == WorkspaceRoleService.Normalize(role))
++            .OrderBy(x => x.Completed).ThenBy(x => x.DueDate ?? DateTime.MaxValue).ThenByDescending(x => x.Created).ToArray();
++
++    public static IReadOnlyList<FamilyUpdateEntry> GetFamilyUpdates(VaultStore store) =>
++        store.All<FamilyUpdateEntry>("familyupdate").Where(x => x is not null && x.WorkspaceRole == WorkspaceRoleService.ParentGuardian)
++            .OrderByDescending(x => x.Created).ToArray();
++
++    public static void SaveNote(VaultStore store, WorkspaceNote note) => store.Save("workspacenote", note.Id, note);
++    public static void SaveTask(VaultStore store, WorkspaceTask task) => store.Save("workspacetask", task.Id, task);
++    public static void CompleteTask(VaultStore store, WorkspaceTask task, bool completed) => SaveTask(store, task with { Completed = completed });
++    public static void SaveFamilyUpdate(VaultStore store, FamilyUpdateEntry update) => store.Save("familyupdate", update.Id, update);
++
++    static string RequireRole(string? role)
++    {
++        if (!WorkspaceRoleService.IsKnownRole(role)) throw new ArgumentException("Kies een bekende MoodPress-omgeving.", nameof(role));
++        return WorkspaceRoleService.Normalize(role);
++    }
++
++    static string RequiredText(string? value, int maxLength, string parameterName)
++    {
++        var safe = (value ?? string.Empty).Trim();
++        if (safe.Length == 0) throw new ArgumentException("Dit veld is verplicht.", parameterName);
++        if (safe.Length > maxLength) throw new ArgumentException($"Dit veld mag maximaal {maxLength} tekens bevatten.", parameterName);
++        return safe;
++    }
++}
+--- a/MijnGevoel-Android/MijnGevoel.Core/Data/ExportService.cs
++++ b/MijnGevoel-Android/MijnGevoel.Core/Data/ExportService.cs
+@@ -39,6 +39,9 @@
+             EigenKaarten = store.All<TalkCard>("card").OrderBy(c => c.Text).ToList(),
+             Gesprekskaart = store.Load<TalkPrep>("talk", Guid.Empty),
+             Instellingen = store.Load<UserSettings>("settings", Guid.Empty),
++            WerkruimteNotities = store.All<WorkspaceNote>("workspacenote").OrderBy(e => e.Created).ToList(),
++            Werkruimtetaken = store.All<WorkspaceTask>("workspacetask").OrderBy(e => e.Created).ToList(),
++            FamilieUpdatesConcepten = store.All<FamilyUpdateEntry>("familyupdate").OrderBy(e => e.Created).ToList(),
+         };
+         var opt = new JsonSerializerOptions { WriteIndented = true, Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
+         File.WriteAllText(path, JsonSerializer.Serialize(data, opt), new System.Text.UTF8Encoding(false));
