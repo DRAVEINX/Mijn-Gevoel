@@ -1,0 +1,88 @@
+diff --git a/MijnGevoel.Android/FeaturePage.cs b/MijnGevoel.Android/FeaturePage.cs
+index 709ab83..9982e6f 100644
+--- a/MijnGevoel.Android/FeaturePage.cs
++++ b/MijnGevoel.Android/FeaturePage.cs
+@@ -1644,6 +1644,46 @@ public sealed partial class FeaturePage : ContentPage
+         Add(moodGrid);
+         Add(selectedLabel);
+ 
++        // Many people experience more than one feeling at the same time. Keep one main feeling for existing reports,
++        // and persist any additional feelings as an optional, backwards-compatible list.
++        var additionalFeelings = new HashSet<string>(existing?.AdditionalFeelings ?? new List<string>(), StringComparer.OrdinalIgnoreCase);
++        additionalFeelings.Remove(selectedFeeling);
++        var additionalStatus = AppUi.Label(additionalFeelings.Count == 0
++            ? "Nog geen extra gevoelens gekozen. Dit mag je overslaan."
++            : "Extra gevoelens: " + string.Join(", ", additionalFeelings), muted: true);
++        var additionalGrid = new FlexLayout { Wrap = FlexWrap.Wrap, Direction = FlexDirection.Row, JustifyContent = FlexJustify.Start };
++        var additionalButtons = new List<(string Name, Button Button)>();
++        foreach (var mood in feelings.Where(x => x.Name != selectedFeeling))
++        {
++            var selected = additionalFeelings.Contains(mood.Name);
++            var extraButton = AppUi.Button($"{mood.Emoji} {mood.Name}", () =>
++            {
++                if (additionalFeelings.Contains(mood.Name)) additionalFeelings.Remove(mood.Name);
++                else additionalFeelings.Add(mood.Name);
++                foreach (var pair in additionalButtons)
++                {
++                    var active = additionalFeelings.Contains(pair.Name);
++                    pair.Button.BorderColor = active ? AppUi.Cyan : AppUi.Border;
++                    pair.Button.BorderWidth = active ? 3 : 1;
++                    pair.Button.Opacity = active ? 1 : 0.82;
++                }
++                additionalStatus.Text = additionalFeelings.Count == 0
++                    ? "Nog geen extra gevoelens gekozen. Dit mag je overslaan."
++                    : "Extra gevoelens: " + string.Join(", ", additionalFeelings.OrderBy(x => x));
++                AppSession.Touch();
++            }, quiet: true);
++            extraButton.MinimumHeightRequest = 48;
++            extraButton.Padding = new Thickness(10, 6);
++            extraButton.BorderColor = selected ? AppUi.Cyan : AppUi.Border;
++            extraButton.BorderWidth = selected ? 3 : 1;
++            extraButton.Opacity = selected ? 1 : 0.82;
++            additionalButtons.Add((mood.Name, extraButton));
++            additionalGrid.Children.Add(extraButton);
++        }
++        AddLabel("Voel ik nog iets anders? (meerdere keuzes mogelijk)", title: true);
++        Add(additionalGrid);
++        Add(additionalStatus);
++
+         var includeIntensity = new Switch { IsToggled = (existing?.Intensity ?? 0) > 0, OnColor = AppUi.Accent };
+         var intensity = new Slider { Minimum = 1, Maximum = 10, Value = Math.Clamp((existing?.Intensity ?? 0) > 0 ? existing!.Intensity : 5, 1, 10), MinimumTrackColor = AppUi.Accent, MaximumTrackColor = Color.FromArgb("#273858"), ThumbColor = AppUi.Cyan, IsEnabled = includeIntensity.IsToggled };
+         var intensityLabel = AppUi.Label(includeIntensity.IsToggled ? $"Sterkte: {(int)Math.Round(intensity.Value)} van 10" : "Sterkte overslaan", title: true);
+@@ -1675,6 +1715,7 @@ public sealed partial class FeaturePage : ContentPage
+                 item = old with
+                 {
+                     Feeling = selectedFeeling,
++                    AdditionalFeelings = additionalFeelings.Where(x => !string.Equals(x, selectedFeeling, StringComparison.OrdinalIgnoreCase)).Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
+                     Intensity = includeIntensity.IsToggled ? (int)Math.Round(intensity.Value) : 0,
+                     Reason = reason.SelectedItem?.ToString() ?? "Ik weet het niet",
+                     Note = note.Text?.Trim() ?? ""
+@@ -1683,7 +1724,10 @@ public sealed partial class FeaturePage : ContentPage
+             else
+             {
+                 var id = Guid.NewGuid();
+-                item = new MoodCheckInEntry(id, DateTime.Now, selectedFeeling, includeIntensity.IsToggled ? (int)Math.Round(intensity.Value) : 0, reason.SelectedItem?.ToString() ?? "Ik weet het niet", note.Text?.Trim() ?? "");
++                item = new MoodCheckInEntry(id, DateTime.Now, selectedFeeling, includeIntensity.IsToggled ? (int)Math.Round(intensity.Value) : 0, reason.SelectedItem?.ToString() ?? "Ik weet het niet", note.Text?.Trim() ?? "")
++                {
++                    AdditionalFeelings = additionalFeelings.Where(x => !string.Equals(x, selectedFeeling, StringComparison.OrdinalIgnoreCase)).Distinct(StringComparer.OrdinalIgnoreCase).ToList()
++                };
+             }
+             Store.Save("moodcheckin", item.Id, item);
+             AppSession.Touch();
+diff --git a/MijnGevoel.Core/Data/Models.cs b/MijnGevoel.Core/Data/Models.cs
+index f0445a1..55589db 100644
+--- a/MijnGevoel.Core/Data/Models.cs
++++ b/MijnGevoel.Core/Data/Models.cs
+@@ -5,7 +5,11 @@ public record JournalEntry(Guid Id, DateTime Created, int Mood, string Text);
+ /// <summary>De vier herkenbare gevoelens voor snelle, visuele invoer.</summary>
+ public record FourGFeelingEntry(Guid Id, DateTime Created, string Feeling);
+ /// <summary>Uitgebreide dagelijkse check-in. De gegevens worden via VaultStore versleuteld opgeslagen.</summary>
+-public record MoodCheckInEntry(Guid Id, DateTime Created, string Feeling, int Intensity, string Reason, string Note);
++public record MoodCheckInEntry(Guid Id, DateTime Created, string Feeling, int Intensity, string Reason, string Note)
++{
++    /// <summary>Optional extra feelings chosen alongside the main feeling. Missing on old encrypted records is treated as empty.</summary>
++    public List<string> AdditionalFeelings { get; init; } = new();
++}
+ /// <summary>Een korte gesproken notitie; AudioData wordt uitsluitend binnen de versleutelde VaultStore bewaard.</summary>
+ public record VoiceNoteEntry(Guid Id, DateTime Created, string Context, byte[] AudioData);
+ public record DrawingEntry(Guid Id, DateTime Created, string Title, byte[] Isf, byte[] Png);
