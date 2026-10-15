@@ -1,0 +1,47 @@
+name: Inspect iOS source archive
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/complete-accessible-upgrade
+    paths:
+      - 'upgrade-patches/IOS-INSPECT-READY'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect-ios:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout current feature branch
+        uses: actions/checkout@v4
+
+      - name: Validate and unpack iOS source archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive='MoodPress-iOS-compleet-2.3.2.zip'
+          test -f "$archive" || { echo "iOS source archive not present in repository: $archive" >&2; exit 1; }
+          unzip -t "$archive"
+          mkdir -p ios-source artifacts
+          unzip -q "$archive" -d ios-source
+          find ios-source -type f | sort > artifacts/IOS-FILE-INVENTORY.txt
+          {
+            while IFS= read -r file; do
+              case "$file" in
+                *.swift|*.plist|*.entitlements|*.yml|*.yaml|*.md|*.pbxproj|*.xcconfig|*.json)
+                  printf '\n\n================ %s ================\n' "$file"
+                  sed -n '1,260p' "$file"
+                  ;;
+              esac
+            done < artifacts/IOS-FILE-INVENTORY.txt
+          } > artifacts/IOS-KEY-SOURCE-FILES.txt
+          (cd ios-source && zip -qr "$GITHUB_WORKSPACE/artifacts/MoodPress-iOS-2.3.2-unpacked.zip" .)
+      - name: Upload inspection bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: MoodPress-iOS-source-inspection
+          path: artifacts/
+          if-no-files-found: error
+          retention-days: 7
