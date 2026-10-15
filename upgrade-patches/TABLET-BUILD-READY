@@ -7,3 +7,5 @@ Retry after filtering tablet-specific version hunks from 3.1 and 3.2 patches.
 Rebuild tablet after optional-hunk and checksum corrections.
 
 Retry after platform-specific project metadata patch fix.
+
+Rebuild tablet using latest patch filtering and checksum workflow.
