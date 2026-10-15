@@ -1,0 +1,10 @@
+diff --git a/MijnGevoel-Android/MijnGevoel.Android/DashboardPage.cs b/MijnGevoel-Android/MijnGevoel.Android/DashboardPage.cs
+--- a/MijnGevoel-Android/MijnGevoel.Android/DashboardPage.cs
++++ b/MijnGevoel-Android/MijnGevoel.Android/DashboardPage.cs
+@@ -87,6 +87,8 @@
+         root.Children.Add(AppUi.AsyncButton("🆘 Ik heb nu hulp nodig — open mijn helpkaart",
+             async () => await Navigation.PushAsync(new FeaturePage(FeatureKind.SafetyPlan)), quiet: true));
++        root.Children.Add(AppUi.AsyncButton("🌿 Ik wil even tot rust komen",
++            async () => await Navigation.PushAsync(new FeaturePage(FeatureKind.Calm)), quiet: true));
+ 
+         root.Children.Add(SectionHeading("Waar wil je naartoe?"));
