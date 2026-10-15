@@ -59,17 +59,17 @@
 +            if (ex is ActivityNotFoundException) throw new InvalidOperationException("De spraakherkenning kan niet worden geopend. Je kunt typen of een geluidsopname maken.", ex);
 +            throw;
 +        }
-
-        return await tcs.Task;
-    }
-
-    public static void HandleActivityResult(int requestCode, Result resultCode, Intent? data)
-    {
-        if (requestCode != RequestCode) return;
-        var tcs = Interlocked.Exchange(ref _pending, null);
-        if (tcs is null) return;
-        if (resultCode != Result.Ok) { tcs.TrySetResult(null); return; }
-        var matches = data?.GetStringArrayListExtra(RecognizerIntent.ExtraResults);
-        tcs.TrySetResult(matches?.FirstOrDefault(x => !string.IsNullOrWhiteSpace(x)));
-    }
-}
++
++        return await tcs.Task;
++    }
++
++    public static void HandleActivityResult(int requestCode, Result resultCode, Intent? data)
++    {
++        if (requestCode != RequestCode) return;
++        var tcs = Interlocked.Exchange(ref _pending, null);
++        if (tcs is null) return;
++        if (resultCode != Result.Ok) { tcs.TrySetResult(null); return; }
++        var matches = data?.GetStringArrayListExtra(RecognizerIntent.ExtraResults);
++        tcs.TrySetResult(matches?.FirstOrDefault(x => !string.IsNullOrWhiteSpace(x)));
++    }
++}
