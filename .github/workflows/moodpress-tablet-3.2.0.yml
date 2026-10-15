@@ -36,11 +36,24 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # The tablet archive has different version metadata than the phone archive.
+          # Omit only the shared patch's phone-project version hunk; set tablet identity below.
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          patch_text = Path('upgrade-patches/04-tests-version-home.patch').read_text(encoding='utf-8')
+          sections = re.split(r'(?=^--- )', patch_text, flags=re.M)
+          target = '--- a/MijnGevoel-Android/MijnGevoel.Android/MijnGevoel.Android.csproj'
+          if not any(section.startswith(target) for section in sections):
+              raise SystemExit('Expected Android project version hunk not found in shared patch')
+          filtered = [section for section in sections if not section.startswith(target)]
+          Path('/tmp/04-tests-version-home-tablet.patch').write_text(''.join(filtered), encoding='utf-8')
+          PY
           cat upgrade-patches/01-android-navigation.patch \
               upgrade-patches/02a-android-speech.patch \
               upgrade-patches/02b-android-workspace.patch \
               upgrade-patches/03-core-workspaces.patch \
-              upgrade-patches/04-tests-version-home.patch \
+              /tmp/04-tests-version-home-tablet.patch \
               upgrade-patches/05-desktop-workspace.patch > /tmp/moodpress-base-3.0.0.patch
           (cd source && patch --batch --forward -p1 < /tmp/moodpress-base-3.0.0.patch)
 
