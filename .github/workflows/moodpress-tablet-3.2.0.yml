@@ -1,4 +1,4 @@
-name: MoodPress Tablet 3.2.0 - parity, tests, APK
+name: MoodPress Tablet 3.3.0 - parity, tests, APK
 on:
   workflow_dispatch:
   push:
@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: moodpress-tablet-3.2.0
+  group: moodpress-tablet-3.3.0
   cancel-in-progress: false
 
 jobs:
@@ -86,8 +86,34 @@ jobs:
           base64 --decode /tmp/moodpress-3.2.0.patch.gz.b64 > /tmp/moodpress-3.2.0.patch.gz
           echo 'dbdc02380d0471ea518b88cf92ad3393ff333197413540e7cd86a750da1b3330  /tmp/moodpress-3.2.0.patch.gz' | sha256sum -c -
           gzip --decompress --stdout /tmp/moodpress-3.2.0.patch.gz > /tmp/moodpress-3.2.0.patch
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          p=Path('/tmp/moodpress-3.2.0.patch')
+          sections=re.split(r'(?=^--- )',p.read_text(encoding='utf-8'),flags=re.M)
+          target='--- a/MijnGevoel-Android/MijnGevoel.Android/MijnGevoel.Android.csproj'
+          filtered=[section for section in sections if not section.startswith(target)]
+          if len(filtered)==len(sections): raise SystemExit('No tablet-incompatible project version section found in 3.2 patch')
+          p.write_text(''.join(filtered),encoding='utf-8')
+          PY
           (cd source && patch --batch --forward -p1 < /tmp/moodpress-3.2.0.patch)
           (cd source && patch --batch --forward -p1 < ../upgrade-patches/09-fix-tts-cancellation.patch)
+
+          # Windows speech parity is shared with tablet builds; skip only the phone package version hunk.
+          test "$(find upgrade-patches -maxdepth 1 -type f -name '11-windows-voice-part-*.b64' | wc -l)" -eq 3
+          cat upgrade-patches/11-windows-voice-part-*.b64 > /tmp/moodpress-windows-3.3.0.patch.gz.b64
+          base64 --decode /tmp/moodpress-windows-3.3.0.patch.gz.b64 > /tmp/moodpress-windows-3.3.0.patch.gz
+          echo 'd17152d4882cefca9771a78ca1b47e2c636094c8f756c6c56a1667b3bf72e1a8  /tmp/moodpress-windows-3.3.0.patch.gz' | sha256sum -c -
+          gzip --decompress --stdout /tmp/moodpress-windows-3.3.0.patch.gz > /tmp/moodpress-windows-3.3.0.patch
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          p=Path('/tmp/moodpress-windows-3.3.0.patch')
+          sections=re.split(r'(?=^--- )',p.read_text(encoding='utf-8'),flags=re.M)
+          target='--- a/MijnGevoel-Android/MijnGevoel.Android/MijnGevoel.Android.csproj'
+          p.write_text(''.join(section for section in sections if not section.startswith(target)),encoding='utf-8')
+          PY
+          (cd source && patch --batch --forward -p1 < /tmp/moodpress-windows-3.3.0.patch)
 
       - name: Set tablet package identity and validate features
         shell: bash
@@ -102,8 +128,8 @@ jobs:
           for tag,value in {
             'ApplicationId':'nl.mijngevoel.app.tablet',
             'ApplicationTitle':'MoodPress Tablet',
-            'ApplicationDisplayVersion':'3.2.0',
-            'ApplicationVersion':'37',
+            'ApplicationDisplayVersion':'3.3.0',
+            'ApplicationVersion':'38',
           }.items():
             pattern=rf'<{tag}>.*?</{tag}>'
             if not re.search(pattern,s,re.S):
@@ -117,8 +143,11 @@ jobs:
             'MijnGevoel.Android/WorkspacePage.cs',
             'MijnGevoel.Android/SpeechInput.cs',
             'MijnGevoel.Android/SpeechOutput.cs',
+            'MijnGevoel.Desktop/DesktopSpeechInput.cs',
             'MijnGevoel.Tests/WorkspaceReportServiceTests.cs',
             'RELEASE-NOTES-3.2.0.md',
+            'RELEASE-NOTES-3.3.0.md',
+            'docs/quality/VOICE-ACCESSIBILITY-3.3.0.md',
             'docs/quality/WORKSPACES-3.1.0.md',
           ]
           missing=[f for f in required if not (root/f).is_file()]
@@ -166,14 +195,14 @@ jobs:
           test -n "$apk" && test -f "$apk"
           unzip -t "$apk"
           mkdir -p "$GITHUB_WORKSPACE/artifacts"
-          cp "$apk" "$GITHUB_WORKSPACE/artifacts/MoodPress-Android-Tablet-3.2.0-debug.apk"
-          (cd source/MijnGevoel-Android && zip -qr -X "$GITHUB_WORKSPACE/artifacts/MoodPress-Android-Tablet-compleet-3.2.0.zip" . -x "./artifacts/*")
-          (cd "$GITHUB_WORKSPACE/artifacts" && sha256sum MoodPress-Android-Tablet-3.2.0-debug.apk MoodPress-Android-Tablet-compleet-3.2.0.zip > SHA256SUMS.txt)
+          cp "$apk" "$GITHUB_WORKSPACE/artifacts/MoodPress-Android-Tablet-3.3.0-debug.apk"
+          (cd source/MijnGevoel-Android && zip -qr -X "$GITHUB_WORKSPACE/artifacts/MoodPress-Android-Tablet-compleet-3.3.0.zip" . -x "./artifacts/*")
+          (cd "$GITHUB_WORKSPACE/artifacts" && sha256sum MoodPress-Android-Tablet-3.3.0-debug.apk MoodPress-Android-Tablet-compleet-3.3.0.zip > SHA256SUMS.txt)
 
       - name: Upload tablet APK, source and checksums
         uses: actions/upload-artifact@v4
         with:
-          name: MoodPress-Android-Tablet-3.2.0-test
+          name: MoodPress-Android-Tablet-3.3.0-test
           path: artifacts/
           if-no-files-found: error
           retention-days: 14
