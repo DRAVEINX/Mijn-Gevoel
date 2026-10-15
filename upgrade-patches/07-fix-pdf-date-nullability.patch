@@ -1,0 +1,25 @@
+--- a/MijnGevoel-Android/MijnGevoel.Android/WorkspacePage.cs
++++ b/MijnGevoel-Android/MijnGevoel.Android/WorkspacePage.cs
+@@ -284,17 +284,19 @@
+         {
+             try
+             {
+-                if (endDate.Date.Date < startDate.Date.Date) { _status.Text = "Kies een einddatum die niet vóór de begindatum ligt."; return; }
++                var reportStart = (startDate.Date ?? DateTime.Today.AddDays(-6)).Date;
++                var reportEnd = (endDate.Date ?? DateTime.Today).Date;
++                if (reportEnd < reportStart) { _status.Text = "Kies een einddatum die niet vóór de begindatum ligt."; return; }
+                 if (!includeNotes.IsChecked && !includeTasks.IsChecked && !includeFeelings.IsChecked) { _status.Text = "Selecteer minstens één onderdeel voor het rapport."; return; }
+                 if (!await DisplayAlertAsync("PDF maken?", "Controleer of de periode en geselecteerde informatie kloppen. Het PDF-bestand is leesbaar voor iedereen aan wie je het stuurt.", "PDF maken", "Annuleren")) return;
+                 var report = WorkspaceReportService.Create(AppSession.Store ?? throw new InvalidOperationException("Log opnieuw in om een rapport te maken."), role,
+-                    startDate.Date, endDate.Date, includeNotes.IsChecked, includeTasks.IsChecked, includeFeelings.IsChecked);
++                    reportStart, reportEnd, includeNotes.IsChecked, includeTasks.IsChecked, includeFeelings.IsChecked);
+                 var bytes = WorkspaceReportService.CreatePdf(report);
+                 var path = Path.Combine(FileSystem.CacheDirectory, $"MoodPress-rapport-{DateTime.Now:yyyyMMdd-HHmmss}.pdf");
+                 await File.WriteAllBytesAsync(path, bytes);
+                 AppSession.Touch();
+                 await Share.Default.RequestAsync(new ShareFileRequest { Title = "MoodPress-rapport (PDF)", File = new ShareFile(path) });
+-                _status.Text = $"PDF gemaakt voor {startDate.Date:dd-MM-yyyy} t/m {endDate.Date:dd-MM-yyyy}.";
++                _status.Text = $"PDF gemaakt voor {reportStart:dd-MM-yyyy} t/m {reportEnd:dd-MM-yyyy}.";
+             }
+             catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or IOException)
+             {
