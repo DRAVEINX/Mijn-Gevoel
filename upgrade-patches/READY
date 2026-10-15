@@ -13,3 +13,5 @@ Build MoodPress 3.2.0 with text-to-speech accessibility on Android and Windows.
 Retry 3.2.0 after correcting MAUI text-to-speech cancellation and Stop behavior.
 
 Retry 3.2.0 after correcting the unified diff hunk lengths for TTS cancellation.
+
+Full cross-platform build: Android phone + tablet APKs, Windows portable build, iOS simulator build, all using shared MoodPress 3.2.0 source and regression tests.
