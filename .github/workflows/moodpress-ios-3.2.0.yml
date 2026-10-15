@@ -1,0 +1,148 @@
+name: MoodPress iOS 3.2.0 - shared features, Core tests, simulator build
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/complete-accessible-upgrade
+    paths:
+      - 'upgrade-patches/IOS-BUILD-READY'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: moodpress-ios-3.2.0
+  cancel-in-progress: false
+
+jobs:
+  ios-simulator:
+    runs-on: xcode-27
+    timeout-minutes: 60
+    steps:
+      - name: Checkout feature branch and shared source patches
+        uses: actions/checkout@v4
+
+      - name: Validate and unpack current Android 2.5.2 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          unzip -t 'MoodPress-Android-compleet-2.5.2.zip'
+          mkdir -p source
+          unzip -q 'MoodPress-Android-compleet-2.5.2.zip' -d source
+          test -f source/MijnGevoel-Android/MijnGevoel.Android/MijnGevoel.Android.csproj
+          test -f source/MijnGevoel-Android/MijnGevoel.Core/MijnGevoel.Core.csproj
+          test -f source/MijnGevoel-Android/MijnGevoel.Tests/MijnGevoel.Tests.csproj
+
+      - name: Apply shared 3.0 workspace features
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat upgrade-patches/01-android-navigation.patch \
+              upgrade-patches/02a-android-speech.patch \
+              upgrade-patches/02b-android-workspace.patch \
+              upgrade-patches/03-core-workspaces.patch \
+              upgrade-patches/04-tests-version-home.patch \
+              upgrade-patches/05-desktop-workspace.patch > /tmp/moodpress-base-3.0.0.patch
+          (cd source && patch --batch --forward -p1 < /tmp/moodpress-base-3.0.0.patch)
+
+      - name: Apply PDF, accessible speech, and cancellation fixes
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(find upgrade-patches -maxdepth 1 -type f -name '06-part-*.b64' | wc -l)" -eq 7
+          cat upgrade-patches/06-part-*.b64 > /tmp/moodpress-3.1.0.patch.gz.b64
+          base64 --decode /tmp/moodpress-3.1.0.patch.gz.b64 > /tmp/moodpress-3.1.0.patch.gz
+          echo 'ac4597e1e1ee71f5288cbba0789e2935e94228540449eb5b5b7305a24e850d1e  /tmp/moodpress-3.1.0.patch.gz' | sha256sum -c -
+          gzip --decompress --stdout /tmp/moodpress-3.1.0.patch.gz > /tmp/moodpress-3.1.0.patch
+          (cd source && patch --batch --forward -p1 < /tmp/moodpress-3.1.0.patch)
+          (cd source && patch --batch --forward -p1 < ../upgrade-patches/07-fix-pdf-date-nullability.patch)
+
+          test "$(find upgrade-patches -maxdepth 1 -type f -name '08-part-*.b64' | wc -l)" -eq 2
+          cat upgrade-patches/08-part-*.b64 > /tmp/moodpress-3.2.0.patch.gz.b64
+          base64 --decode /tmp/moodpress-3.2.0.patch.gz.b64 > /tmp/moodpress-3.2.0.patch.gz
+          echo 'dbdc02380d0471ea518b88cf92ad3393ff333197413540e7cd86a750da1b3330  /tmp/moodpress-3.2.0.patch.gz' | sha256sum -c -
+          gzip --decompress --stdout /tmp/moodpress-3.2.0.patch.gz > /tmp/moodpress-3.2.0.patch
+          (cd source && patch --batch --forward -p1 < /tmp/moodpress-3.2.0.patch)
+          (cd source && patch --batch --forward -p1 < ../upgrade-patches/09-fix-tts-cancellation.patch)
+
+      - name: Apply iOS-specific adaptations to the shared 3.2.0 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(find upgrade-patches -maxdepth 1 -type f -name '10-ios-part-*.b64' | wc -l)" -eq 6
+          cat upgrade-patches/10-ios-part-*.b64 > /tmp/moodpress-ios-3.2.0.patch.gz.b64
+          base64 --decode /tmp/moodpress-ios-3.2.0.patch.gz.b64 > /tmp/moodpress-ios-3.2.0.patch.gz
+          echo 'f2a679fdb5d8132d9813dd7f4d83b3a2e100fe5ffc7920503414a2560b9a659e  /tmp/moodpress-ios-3.2.0.patch.gz' | shasum -a 256 -c -
+          gzip --decompress --stdout /tmp/moodpress-ios-3.2.0.patch.gz > /tmp/moodpress-ios-3.2.0.patch
+          (cd source && patch --batch --forward -p1 < /tmp/moodpress-ios-3.2.0.patch)
+
+      - name: Validate iOS target, permissions, version, and shared workspace files
+        shell: bash
+        run: |
+          set -euo pipefail
+          root='source/MijnGevoel-Android'
+          project="$root/MijnGevoel.Android/MoodPress.iOS.csproj"
+          plist="$root/MijnGevoel.Android/Platforms/iOS/Info.plist"
+          test -f "$project"
+          test -f "$plist"
+          grep -q '<TargetFramework>net10.0-ios</TargetFramework>' "$project"
+          grep -q '<ApplicationDisplayVersion>3.2.0</ApplicationDisplayVersion>' "$project"
+          grep -q '<ApplicationVersion>37</ApplicationVersion>' "$project"
+          grep -q '<ApplicationId>nl.mijngevoel.app</ApplicationId>' "$project"
+          grep -q 'NSSpeechRecognitionUsageDescription' "$plist"
+          grep -q 'NSMicrophoneUsageDescription' "$plist"
+          grep -q 'NSFaceIDUsageDescription' "$plist"
+          test -f "$root/MijnGevoel.Android/WorkspacePage.cs"
+          test -f "$root/MijnGevoel.Android/SpeechInput.cs"
+          test -f "$root/MijnGevoel.Android/SpeechOutput.cs"
+          test -f "$root/MijnGevoel.Core/Data/WorkspaceReportService.cs"
+          test -f "$root/MijnGevoel.Tests/WorkspaceReportServiceTests.cs"
+          echo 'iOS target 3.2.0 and the shared accessibility/workspace source are present.'
+
+      - name: Set up .NET SDKs
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.401
+
+      - name: Verify Xcode
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          XCODE_VERSION="$(xcodebuild -version | awk '/^Xcode / {print $2}')"
+          [[ "$XCODE_VERSION" == 27.0* ]] || { echo "Expected Xcode 27.0, found $XCODE_VERSION" >&2; exit 1; }
+          dotnet --info
+
+      - name: Run shared Core regression tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet test source/MijnGevoel-Android/MijnGevoel.Tests/MijnGevoel.Tests.csproj --configuration Release --logger "console;verbosity=normal"
+
+      - name: Install MAUI workload compatible with Xcode 27
+        run: dotnet workload install maui --version 10.0.401.1
+
+      - name: Build unsigned iOS simulator app
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd source/MijnGevoel-Android/MijnGevoel.Android
+          if [[ "$(uname -m)" == "arm64" ]]; then RID='iossimulator-arm64'; else RID='iossimulator-x64'; fi
+          dotnet build MoodPress.iOS.csproj --configuration Debug --framework net10.0-ios -p:RuntimeIdentifier="$RID" -p:EnableCodeSigning=false
+          mkdir -p ../../../artifacts/ios
+          APP_PATH="$(find bin-ios/Debug/net10.0-ios -type d -name '*.app' -print -quit)"
+          test -n "$APP_PATH" || { echo 'No simulator .app bundle was produced.' >&2; find bin-ios/Debug -maxdepth 6 -print; exit 1; }
+          ditto "$APP_PATH" ../../../artifacts/ios/MoodPress-iOS-Simulator.app
+          ditto -c -k --sequesterRsrc --keepParent ../../../artifacts/ios/MoodPress-iOS-Simulator.app ../../../artifacts/ios/MoodPress-iOS-3.2.0-Simulator.zip
+          shasum -a 256 ../../../artifacts/ios/MoodPress-iOS-3.2.0-Simulator.zip | tee ../../../artifacts/ios/SHA256SUMS.txt
+
+      - name: Upload iOS simulator build and source archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: MoodPress-iOS-3.2.0-simulator
+          path: |
+            artifacts/ios/*
+          if-no-files-found: error
+          retention-days: 14
