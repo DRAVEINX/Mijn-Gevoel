@@ -7,3 +7,5 @@ Retry after platform-specific project metadata patch fix.
 Build and verify signed phone and tablet release APKs.
 
 Retry after portable Windows patch filtering and workflow validation repair.
+
+Rebuild after consolidated Android workflow repair.
