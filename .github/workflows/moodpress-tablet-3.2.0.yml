@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: moodpress-tablet-3.3.0
+  group: moodpress-tablet-3.3.0-repair-20261015
   cancel-in-progress: false
 
 jobs:
