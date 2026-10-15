@@ -30,3 +30,5 @@ Run release repair workflow in a fresh concurrency group.
 # Start clean workflow after removing duplicate trailing YAML: 2026-10-15
 
 Build retry after correcting APK artifact paths.
+
+Retry Windows MSI after fixing WiX wildcard harvest.
