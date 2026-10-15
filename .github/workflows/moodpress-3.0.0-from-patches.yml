@@ -101,6 +101,17 @@ jobs:
           p.write_text(''.join(filtered),encoding='utf-8')
           PY
           (cd source && patch --batch --forward -p1 < /tmp/moodpress-windows-3.3.0.patch)
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          p=Path('source/MijnGevoel-Android/MijnGevoel.Android/MijnGevoel.Android.csproj')
+          s=p.read_text(encoding='utf-8')
+          for tag,value in {'ApplicationId':'nl.mijngevoel.app','ApplicationTitle':'MoodPress','ApplicationDisplayVersion':'3.3.0','ApplicationVersion':'38'}.items():
+              pattern=rf'<{tag}>.*?</{tag}>'
+              if not re.search(pattern,s,re.S): raise SystemExit(f'Missing project property {tag}')
+              s=re.sub(pattern,f'<{tag}>{value}</{tag}>',s,count=1,flags=re.S)
+          p.write_text(s,encoding='utf-8')
+          PY
 
           test -f source/MijnGevoel-Android/MijnGevoel.Android/SpeechOutput.cs
           test -f source/MijnGevoel-Android/MijnGevoel.Desktop/DesktopSpeechInput.cs
