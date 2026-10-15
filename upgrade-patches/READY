@@ -34,3 +34,5 @@ Build retry after correcting APK artifact paths.
 Retry Windows MSI after fixing WiX wildcard harvest.
 
 Retry Windows MSI after removing duplicate MainExecutable component.
+
+Start iPhone/iPad signed device release workflow after adding signing job.
