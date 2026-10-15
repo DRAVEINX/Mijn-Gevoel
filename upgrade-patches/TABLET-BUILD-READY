@@ -9,3 +9,5 @@ Rebuild tablet after optional-hunk and checksum corrections.
 Retry after platform-specific project metadata patch fix.
 
 Rebuild tablet using latest patch filtering and checksum workflow.
+
+Rebuild after consolidated Android workflow repair.
