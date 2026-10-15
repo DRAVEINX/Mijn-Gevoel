@@ -105,6 +105,10 @@ jobs:
           p.write_text(s,encoding='utf-8')
           PY
 
+          # Accessible quick-help entry on the Home screen; applies to phone and tablet layouts.
+          test -f upgrade-patches/12-accessibility-quick-help.patch
+          (cd source && patch --batch --forward -p1 < ../upgrade-patches/12-accessibility-quick-help.patch)
+
           test -f source/MijnGevoel-Android/MijnGevoel.Android/SpeechOutput.cs
           test -f source/MijnGevoel-Android/MijnGevoel.Desktop/DesktopSpeechInput.cs
           test -f source/MijnGevoel-Android/RELEASE-NOTES-3.2.0.md
