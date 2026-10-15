@@ -423,8 +423,11 @@ jobs:
           $wxs = $wxs.Replace('Source="$(PublishDir)\MijnGevoel.exe"', 'Source="$(PublishDir)\MoodPress.exe"')
           $wxs = $wxs.Replace('Name="Mijn Gevoel"', 'Name="MoodPress"')
           if (-not $wxs.Contains('<Files Include="$(PublishDir)\**"')) {
+            # The Files wildcard installs every published file, including MoodPress.exe.
+            # Remove the explicit EXE File row first to avoid duplicate MSI file entries.
+            $wxs = [regex]::Replace($wxs, '(?m)^\s*<File\s+Source="\$\(PublishDir\)\\MoodPress\.exe"[^>]*/>\s*\r?\n', '')
             $componentGroupEnd = '    </ComponentGroup>'
-            $filesElement = '      <Files Include="$(PublishDir)\**" Exclude="$(PublishDir)\MoodPress.exe" />' + [Environment]::NewLine + $componentGroupEnd
+            $filesElement = '      <Files Include="$(PublishDir)\**" />' + [Environment]::NewLine + $componentGroupEnd
             $wxs = $wxs.Replace($componentGroupEnd, $filesElement)
           }
           Set-Content -LiteralPath $wxsPath -Value $wxs -Encoding utf8
