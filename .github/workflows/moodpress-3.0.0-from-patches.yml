@@ -765,38 +765,3 @@ jobs:
           path: artifacts/ios-device/*
           if-no-files-found: error
           retention-days: 30
-
-          done
-          (cd release-artifacts && sha256sum *.aab > AAB-SHA256SUMS.txt)
-
-      - name: Upload signed phone and tablet release AABs
-        uses: actions/upload-artifact@v4
-        with:
-          name: MoodPress-Android-Phone-Tablet-3.3.0-release-AAB
-          path: release-artifacts/*.aab
-          if-no-files-found: error
-          retention-days: 30
-
-      - name: Verify and upload signed release APKs
-        shell: bash
-        run: |
-          set -euo pipefail
-          sdk="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
-          test -n "$sdk"
-          signer="$(find "$sdk/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
-          test -n "$signer" && test -f "$signer"
-          for apk in release-artifacts/*.apk; do
-            test -s "$apk"
-            unzip -t "$apk" >/dev/null
-            zipinfo -1 "$apk" | grep -q 'AndroidManifest.xml'
-            "$signer" verify --verbose "$apk"
-          done
-          (cd release-artifacts && sha256sum *.apk > SHA256SUMS.txt)
-
-      - name: Upload signed phone and tablet release APKs
-        uses: actions/upload-artifact@v4
-        with:
-          name: MoodPress-Android-Phone-Tablet-3.3.0-release
-          path: release-artifacts/
-          if-no-files-found: error
-          retention-days: 30
