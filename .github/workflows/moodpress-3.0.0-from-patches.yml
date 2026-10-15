@@ -425,7 +425,8 @@ jobs:
           if (-not $wxs.Contains('<Files Include="$(PublishDir)\**"')) {
             # The Files wildcard installs every published file, including MoodPress.exe.
             # Remove the explicit EXE File row first to avoid duplicate MSI file entries.
-            $wxs = [regex]::Replace($wxs, '(?m)^\s*<File\s+Source="\$\(PublishDir\)\\MoodPress\.exe"[^>]*/>\s*\r?\n', '')
+            # Remove the explicit MainExecutable component so the wildcard harvest owns the EXE once.
+            $wxs = [regex]::Replace($wxs, '(?s)\s*<Component\b(?=[^>]*\bId="MainExecutable")[^>]*>.*?</Component>', '')
             $componentGroupEnd = '    </ComponentGroup>'
             $filesElement = '      <Files Include="$(PublishDir)\**" />' + [Environment]::NewLine + $componentGroupEnd
             $wxs = $wxs.Replace($componentGroupEnd, $filesElement)
