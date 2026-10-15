@@ -3,3 +3,5 @@ MoodPress 3.0.0 patch set completed; trigger the isolated integration, tests and
 Retry after fixing an escaped-newline patch formatting issue.
 
 Retry after correcting patch line prefixes and escaped line breaks.
+
+Trigger the incremental MoodPress 3.1.0 PDF report and explicit share package upgrade; SHA-256 verified in CI.
