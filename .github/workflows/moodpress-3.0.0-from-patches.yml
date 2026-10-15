@@ -206,28 +206,18 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test -s artifacts/MoodPress-Android-Telefoon-3.3.0-debug.apk
-          test -s artifacts/MoodPress-Android-Tablet-3.3.0-debug.apk
-          python3 - <<'PY'
-          from pathlib import Path
-          from zipfile import ZipFile
-          names = [
-              "MoodPress-Android-Telefoon-3.3.0-debug.apk",
-              "MoodPress-Android-Tablet-3.3.0-debug.apk",
-          ]
-          for name in names:
-              path = Path("artifacts") / name
-              try:
-                  with ZipFile(path) as apk:
-                      bad_entry = apk.testzip()
-                      if bad_entry:
-                          raise SystemExit(f"{name}: beschadigde APK-entry: {bad_entry}")
-                      if "AndroidManifest.xml" not in apk.namelist():
-                          raise SystemExit(f"{name}: AndroidManifest.xml ontbreekt")
-              except Exception as exc:
-                  raise SystemExit(f"APK-validatie mislukt voor {name}: {exc}") from exc
-              print(f"APK-validatie geslaagd: {name}")
-          PY
+          phone='artifacts/MoodPress-Android-Telefoon-3.3.0-debug.apk'
+          tablet='artifacts/MoodPress-Android-Tablet-3.3.0-debug.apk'
+          test -s "$phone"
+          test -s "$tablet"
+          for apk in "$phone" "$tablet"; do
+            echo "Controleer APK: $apk"
+            unzip -t "$apk" >/dev/null
+            if ! zipinfo -1 "$apk" | grep -Eq '(^|/)AndroidManifest\.xml$'; then
+              echo "APK mist AndroidManifest.xml: $apk" >&2
+              exit 1
+            fi
+          done
           cp MoodPress-Android-compleet-3.3.0.zip artifacts/
           (cd artifacts && sha256sum MoodPress-Android-Telefoon-3.3.0-debug.apk MoodPress-Android-Tablet-3.3.0-debug.apk MoodPress-Android-compleet-3.3.0.zip > SHA256SUMS.txt)
 
