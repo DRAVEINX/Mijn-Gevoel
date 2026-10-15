@@ -13,7 +13,7 @@ index 709ab83..9982e6f 100644
 +        var additionalStatus = AppUi.Label(additionalFeelings.Count == 0
 +            ? "Nog geen extra gevoelens gekozen. Dit mag je overslaan."
 +            : "Extra gevoelens: " + string.Join(", ", additionalFeelings), muted: true);
-+        var additionalGrid = new FlexLayout { Wrap = FlexWrap.Wrap, Direction = FlexDirection.Row, JustifyContent = FlexJustify.Start };
++        var additionalGrid = new FlexLayout { Wrap = Microsoft.Maui.Layouts.FlexWrap.Wrap, Direction = Microsoft.Maui.Layouts.FlexDirection.Row, JustifyContent = Microsoft.Maui.Layouts.FlexJustify.Start };
 +        var additionalButtons = new List<(string Name, Button Button)>();
 +        foreach (var mood in feelings.Where(x => x.Name != selectedFeeling))
 +        {
