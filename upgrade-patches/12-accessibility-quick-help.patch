@@ -1,0 +1,12 @@
+--- a/MijnGevoel-Android/MijnGevoel.Android/DashboardPage.cs
++++ b/MijnGevoel-Android/MijnGevoel.Android/DashboardPage.cs
+@@ -84,6 +84,9 @@
+         root.Children.Add(top);
+         root.Children.Add(AppUi.AsyncButton("🧭 Mijn omgeving: " + WorkspaceRoleService.Normalize(AppSession.Settings.WorkspaceRole),
+             async () => await Navigation.PushAsync(new WorkspacePage()), quiet: true));
++        // Keep a direct, always-visible route to the user's own help plan on both phones and tablets.
++        root.Children.Add(AppUi.AsyncButton("🆘 Ik heb nu hulp nodig — open mijn helpkaart",
++            async () => await Navigation.PushAsync(new FeaturePage(FeatureKind.SafetyPlan)), quiet: true));
+ 
+         root.Children.Add(SectionHeading("Waar wil je naartoe?"));
+         var knownFeatures = FeatureCatalog.All.Select(x => x.Kind.ToString()).ToArray();
