@@ -93,6 +93,22 @@ jobs:
           plist="$root/MijnGevoel.Android/Platforms/iOS/Info.plist"
           test -f "$project"
           test -f "$plist"
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          root=Path('source/MijnGevoel-Android')
+          p=root/'MijnGevoel.Android/MoodPress.iOS.csproj'
+          s=p.read_text(encoding='utf-8')
+          for tag,value in [('ApplicationDisplayVersion','3.3.0'),('ApplicationVersion','38')]:
+              s,n=re.subn(rf'<{tag}>.*?</{tag}>',f'<{tag}>{value}</{tag}>',s,count=1,flags=re.S)
+              if n!=1: raise SystemExit(f'Could not update iOS property {tag}')
+          p.write_text(s,encoding='utf-8')
+          quality=root/'docs/quality'
+          for old_name,new_name in [('IOS-STATUS-3.2.0.md','IOS-STATUS-3.3.0.md'),('VALIDATIERAPPORT-3.2.0.md','VALIDATIERAPPORT-3.3.0.md')]:
+              old=quality/old_name
+              if old.exists():
+                  (quality/new_name).write_text(old.read_text(encoding='utf-8').replace('3.2.0','3.3.0'),encoding='utf-8')
+          PY
           grep -q '<TargetFramework>net10.0-ios</TargetFramework>' "$project"
           grep -q '<ApplicationDisplayVersion>3.3.0</ApplicationDisplayVersion>' "$project"
           grep -q '<ApplicationVersion>38</ApplicationVersion>' "$project"
