@@ -53,3 +53,4 @@ Quick-help Home entry added through patch 12; validate phone/tablet build and MS
 16-home-calm-shortcut.patch: one-tap access to the calm space from Home on phone and tablet.
 Persist the communication-card composer draft in the encrypted local vault.
 Rebuild after correcting saved composer patch hunk length.
+Retry after correcting source-root paths in patches 13-15.
