@@ -1,3 +1,5 @@
 MoodPress 3.0.0 patch set completed; trigger the isolated integration, tests and debug APK build.
 
 Retry after fixing an escaped-newline patch formatting issue.
+
+Retry after correcting patch line prefixes and escaped line breaks.
