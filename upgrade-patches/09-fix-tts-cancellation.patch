@@ -1,0 +1,45 @@
+--- a/MijnGevoel-Android/MijnGevoel.Android/SpeechOutput.cs
++++ b/MijnGevoel-Android/MijnGevoel.Android/SpeechOutput.cs
+@@ -3,17 +3,37 @@
+ namespace MijnGevoel.AndroidApp;
+ 
+ /// <summary>Reads user-selected text aloud for people who find reading difficult.</summary>
+ public static class SpeechOutput
+ {
++    static readonly object Gate = new();
++    static CancellationTokenSource? Active;
++
+     public static async Task SpeakAsync(string? text)
+     {
+         var value = (text ?? string.Empty).Trim();
+         if (value.Length == 0) return;
+         // Bound utterance size so a long imported or pasted note cannot unexpectedly speak forever.
+         if (value.Length > 4_000) value = value[..4_000];
+-        await TextToSpeech.Default.SpeakAsync(value, cancellationToken: CancellationToken.None);
++
++        var source = new CancellationTokenSource();
++        lock (Gate)
++        {
++            Active?.Cancel();
++            Active = source;
++        }
++        try
++        {
++            await TextToSpeech.Default.SpeakAsync(value, cancelToken: source.Token);
++        }
++        finally
++        {
++            lock (Gate)
++            {
++                if (ReferenceEquals(Active, source)) Active = null;
++            }
++            source.Dispose();
++        }
+     }
+ 
+-    public static void Stop() => TextToSpeech.Default.Stop();
++    public static void Stop()
++    {
++        lock (Gate) Active?.Cancel();
++    }
+ }
