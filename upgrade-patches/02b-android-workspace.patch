@@ -1,0 +1,252 @@
+--- /dev/null
++++ b/MijnGevoel-Android/MijnGevoel.Android/WorkspacePage.cs
+@@ -0,0 +1,243 @@
++using System.Text;
++using Microsoft.Maui.ApplicationModel.DataTransfer;
++using Microsoft.Maui.Storage;
++using MijnGevoel.Core.Data;
++
++namespace MijnGevoel.AndroidApp;
++
++/// <summary>Role-specific local workspaces. A workspace never grants access to another person's account.</summary>
++public sealed class WorkspacePage : ContentPage
++{
++    readonly VerticalStackLayout _root = new() { Padding = new Thickness(16, 14, 16, 24), Spacing = 12, BackgroundColor = AppUi.Background };
++    Picker _rolePicker = null!;
++    Label _status = null!;
++    Entry _noteTitle = null!;
++    Editor _noteBody = null!;
++    Picker _noteCategory = null!;
++    Entry _taskTitle = null!;
++    Editor _taskDetails = null!;
++    DatePicker _taskDate = null!;
++    Editor? _familyUpdateMessage;
++    Entry? _familyUpdateTitle;
++
++    public WorkspacePage(string? initialRole = null)
++    {
++        Title = "Mijn omgeving";
++        BackgroundColor = AppUi.Background;
++        Content = new ScrollView { Content = _root, BackgroundColor = AppUi.Background };
++        ToolbarItems.Add(new ToolbarItem("🔒", null, async () => await ((App)Application.Current!).LockToLoginAsync("Je sessie is vergrendeld.")));
++        ToolbarItems.Add(new ToolbarItem("🙈", null, async () => await Navigation.PushAsync(new PrivacyCoverPage())));
++        var role = WorkspaceRoleService.Normalize(initialRole ?? AppSession.Settings.WorkspaceRole);
++        if (initialRole is not null)
++        {
++            WorkspaceRoleService.SetRole(AppSession.Settings, role);
++            AppSession.SaveSettings();
++        }
++        Build(role);
++    }
++
++    void Build(string role)
++    {
++        _root.Children.Clear();
++        _rolePicker = AppUi.Picker("Kies je omgeving", WorkspaceRoleService.Roles, role);
++        _status = AppUi.Label("Je gegevens blijven lokaal in de versleutelde kluis van het account waarmee je bent ingelogd.", muted: true);
++        _root.Children.Add(AppUi.BrandLockup(true));
++        _root.Children.Add(AppUi.Title("Jouw MoodPress-omgeving"));
++        _root.Children.Add(AppUi.Label("Kies de ruimte die je nu nodig hebt. Elke ruimte heeft eigen hulpmiddelen en eigen notities."));
++        _root.Children.Add(_rolePicker);
++        _root.Children.Add(AppUi.AsyncButton("✅ Deze omgeving openen", ApplyRoleAsync));
++        _root.Children.Add(AppUi.Card(AppUi.Stack(AppUi.Label(WorkspaceRoleService.Normalize(role), title: true), AppUi.Label(WorkspaceRoleService.Description(role)))));
++
++        AddRoleActions(role);
++        AddLocalNotes(role);
++        AddLocalTasks(role);
++        if (role == WorkspaceRoleService.ParentGuardian) AddFamilyUpdateDraft(role);
++        AddExportSection(role);
++        _root.Children.Add(_status);
++        _root.Children.Add(AppUi.Label("Privacy: deze omgeving synchroniseert niets automatisch. Iedere persoon hoort een eigen account te gebruiken. Een rolkeuze alleen is geen beveiligingsgrens. Informatie van een ander komt uitsluitend via een bewust gedeeld, versleuteld pakket of een apart lokaal ondersteuningsplan.", muted: true));
++        _root.Children.Add(AppUi.Label("Spraakherkenning kan via de op het toestel gekozen Android-dienst lopen. Controleer herkende tekst altijd voordat je die bewaart.", muted: true));
++        _root.Children.Add(AppUi.Button("← Terug naar MoodPress", () => Navigation.PopAsync(), quiet: true));
++    }
++
++    Task ApplyRoleAsync()
++    {
++        var requested = WorkspaceRoleService.Normalize(_rolePicker.SelectedItem?.ToString());
++        WorkspaceRoleService.SetRole(AppSession.Settings, requested);
++        AppSession.SaveSettings();
++        AppSession.Touch();
++        Build(requested);
++        _status.Text = $"Omgeving ingesteld op: {requested}. Dit verandert geen deelrechten en geeft geen toegang tot andere accounts.";
++        return Task.CompletedTask;
++    }
++
++    void AddRoleActions(string role)
++    {
++        _root.Children.Add(AppUi.Title("Handige functies"));
++        if (role == WorkspaceRoleService.Personal)
++        {
++            AddOpen("😊 Hoe voel ik me?", async () => await Navigation.PushAsync(new FeaturePage(FeatureKind.DailyCheckIn)));
++            AddOpen("📓 Mijn dagboek en spraaknotities", async () => await Navigation.PushAsync(new FeaturePage(FeatureKind.Journal)));
++            AddOpen("🎨 Tekenen", async () => await Navigation.PushAsync(new FeaturePage(FeatureKind.Draw)));
++            AddOpen("🖼️ Mijn tekeningen", async () => await Navigation.PushAsync(new FeaturePage(FeatureKind.Gallery)));
++            AddOpen("🧩 Mijn visuele dagschema", async () => await Navigation.PushAsync(new ChildSchedulePage()));
++            AddOpen("🌿 Mijn rustplek en ademhalen", async () => await Navigation.PushAsync(new FeaturePage(FeatureKind.Calm)));
++            AddOpen("🆘 Mijn helpkaart", async () => await Navigation.PushAsync(new FeaturePage(FeatureKind.SafetyPlan)));
++            AddOpen("📤 Ik kies wat ik deel", async () => await Navigation.PushAsync(new SupportPackageSharePage()));
++            AddOpen("📆 Bekijk mijn gevoelens en patronen", async () => await Navigation.PushAsync(new FeaturePage(FeatureKind.MoodInsights)), quiet: true);
++        }
++        else if (role == WorkspaceRoleService.Caregiver)
++        {
++            AddOpen("🔐 Begeleidersruimte met eigen toegangscode", async () => await Navigation.PushAsync(new SupporterCenterPage()));
++            AddOpen("📂 Een gedeeld bestand bekijken", async () => await Navigation.PushAsync(new ShareOpenPage()));
++            AddOpen("📥 Een gedeeld voorstel ontvangen", async () => await Navigation.PushAsync(new ReceiveSupportPackagePage()));
++            AddOpen("👥 Wie werkt er? / lokaal weekrooster", async () => await Navigation.PushAsync(new WieWerktErPage()));
++            AddOpen("🗓️ Mijn planning en overdrachtstaken", async () => await Navigation.PushAsync(new FeaturePage(FeatureKind.Agenda)));
++            AddOpen("✅ Eigen routines en stappenplannen", async () => await Navigation.PushAsync(new FeaturePage(FeatureKind.Routines)));
++            AddOpen("🧭 Eigen doelen en werkplanning", async () => await Navigation.PushAsync(new FeaturePage(FeatureKind.AdultPlanning)));
++            _root.Children.Add(AppUi.Label("De overdrachtsnotities en taken hieronder zijn van dit account en worden niet naar een team gestuurd. Gebruik het gedeelde pakket voor informatie die de cliënt bewust met jou deelt.", muted: true));
++        }
++        else
++        {
++            AddOpen("🔐 Ouders-/voogdenruimte met eigen toegangscode", async () => await Navigation.PushAsync(new SupporterCenterPage()));
++            AddOpen("📂 Een gedeeld bestand van mijn kind/naaste bekijken", async () => await Navigation.PushAsync(new ShareOpenPage()));
++            AddOpen("📥 Een bewust gedeeld voorstel ontvangen", async () => await Navigation.PushAsync(new ReceiveSupportPackagePage()));
++            AddOpen("🗓️ Afspraken en familieplanning", async () => await Navigation.PushAsync(new FeaturePage(FeatureKind.Agenda)));
++            AddOpen("🧩 Een eenvoudige dagplanning bekijken", async () => await Navigation.PushAsync(new ChildSchedulePage()));
++            AddOpen("💬 Een gesprek voorbereiden", async () => await Navigation.PushAsync(new FeaturePage(FeatureKind.TalkPrep)));
++            AddOpen("📝 Eigen vragen en punten voor een gesprek", async () => await Navigation.PushAsync(new FeaturePage(FeatureKind.Notes)));
++            _root.Children.Add(AppUi.Label("Updates hieronder zijn alleen concepten in je eigen account. Er wordt niets automatisch naar je kind, voogd, school of begeleider gestuurd.", muted: true));
++        }
++    }
++
++    void AddLocalNotes(string role)
++    {
++        _root.Children.Add(AppUi.Title(role == WorkspaceRoleService.Personal ? "Mijn eigen notities" : role == WorkspaceRoleService.Caregiver ? "Overdrachtsnotities" : "Vragen en steunnotities"));
++        _noteTitle = AppUi.Entry("Titel (bijvoorbeeld: bespreken op woensdag)");
++        _noteCategory = AppUi.Picker("Soort notitie", role == WorkspaceRoleService.Caregiver
++            ? new[] { "Overdracht", "Afspraak", "Reflectie", "Vraag" }
++            : role == WorkspaceRoleService.ParentGuardian
++                ? new[] { "Vraag", "Familieafspraak", "Reflectie", "Steun" }
++                : new[] { "Dagnotitie", "Gevoel", "Idee", "Anders" });
++        _noteBody = AppUi.Editor("Schrijf of dicteer je notitie…", height: 120);
++        _root.Children.Add(_noteTitle);
++        _root.Children.Add(_noteCategory);
++        _root.Children.Add(_noteBody);
++        _root.Children.Add(AppUi.AsyncButton("🎙️ Tekst inspreken", async () =>
++        {
++            var spoken = await SpeechInput.ListenAsync();
++            if (!string.IsNullOrWhiteSpace(spoken)) _noteBody.Text = string.IsNullOrWhiteSpace(_noteBody.Text) ? spoken : _noteBody.Text.TrimEnd() + " " + spoken;
++            _status.Text = string.IsNullOrWhiteSpace(spoken) ? "Geen tekst herkend. Je kunt het opnieuw proberen of typen." : "Spraak omgezet naar tekst. Controleer de tekst voordat je hem bewaart.";
++        }, quiet: true));
++        _root.Children.Add(AppUi.AsyncButton("💾 Notitie versleuteld bewaren", async () =>
++        {
++            try
++            {
++                var item = WorkspaceRecordService.CreateNote(Guid.NewGuid(), DateTime.Now, role, _noteCategory.SelectedItem?.ToString(), _noteTitle.Text, _noteBody.Text);
++                WorkspaceRecordService.SaveNote(AppSession.Store ?? throw new InvalidOperationException("Log eerst in."), item);
++                AppSession.Touch();
++                Build(role);
++                _status.Text = "Notitie opgeslagen in jouw omgeving.";
++            }
++            catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
++            {
++                _status.Text = ex.Message;
++            }
++            await Task.CompletedTask;
++        }));
++        var notes = WorkspaceRecordService.GetNotes(AppSession.Store!, role);
++        _root.Children.Add(AppUi.Label($"Bewaarde notities: {notes.Count}", muted: true));
++        if (notes.Count == 0) _root.Children.Add(AppUi.Label("Je hebt hier nog geen notities."));
++        foreach (var note in notes.Take(12))
++        {
++            var local = note;
++            _root.Children.Add(AppUi.Card(AppUi.Stack(
++                AppUi.Label($"{local.Category} · {local.Created:dd-MM-yyyy HH:mm}", muted: true),
++                AppUi.Label(local.Title, title: true), AppUi.Label(local.Text),
++                AppUi.AsyncButton("🗑️ Notitie verwijderen", async () =>
++                {
++                    if (await DisplayAlertAsync("Notitie verwijderen?", "Deze notitie wordt definitief uit jouw omgeving verwijderd.", "Verwijderen", "Annuleren"))
++                    { AppSession.Store!.Delete("workspacenote", local.Id); AppSession.Touch(); Build(role); }
++                }, quiet: true))));
++        }
++    }
++
++    void AddLocalTasks(string role)
++    {
++        _root.Children.Add(AppUi.Title(role == WorkspaceRoleService.Caregiver ? "Eigen taken en overdracht" : role == WorkspaceRoleService.ParentGuardian ? "Afspraken en taken" : "Mijn kleine stappen"));
++        _taskTitle = AppUi.Entry("Taak of afspraak");
++        _taskDetails = AppUi.Editor("Extra uitleg (optioneel)", height: 80);
++        _taskDate = new DatePicker { Date = DateTime.Today, MinimumDate = DateTime.Today.AddYears(-1), MaximumDate = DateTime.Today.AddYears(5), Format = "dddd d MMMM yyyy", TextColor = AppUi.Foreground, BackgroundColor = AppUi.Surface };
++        _root.Children.Add(_taskTitle);
++        _root.Children.Add(AppUi.Label("Datum (optioneel; laat vandaag staan als er geen datum is)", muted: true));
++        _root.Children.Add(_taskDate);
++        _root.Children.Add(_taskDetails);
++        _root.Children.Add(AppUi.AsyncButton("➕ Taak bewaren", async () =>
++        {
++            try
++            {
++                DateTime? due = _taskDate.Date == DateTime.Today ? null : _taskDate.Date;
++                var task = WorkspaceRecordService.CreateTask(Guid.NewGuid(), DateTime.Now, due, role, _taskTitle.Text, _taskDetails.Text);
++                WorkspaceRecordService.SaveTask(AppSession.Store ?? throw new InvalidOperationException("Log eerst in."), task);
++                AppSession.Touch(); Build(role); _status.Text = "Taak bewaard.";
++            }
++            catch (Exception ex) when (ex is ArgumentException or InvalidOperationException) { _status.Text = ex.Message; }
++            await Task.CompletedTask;
++        }, quiet: true));
++        var tasks = WorkspaceRecordService.GetTasks(AppSession.Store!, role);
++        _root.Children.Add(AppUi.Label($"Taken: {tasks.Count(x => !x.Completed)} open · {tasks.Count(x => x.Completed)} afgerond", muted: true));
++        foreach (var item in tasks.Take(20))
++        {
++            var local = item;
++            _root.Children.Add(AppUi.Card(AppUi.Stack(
++                AppUi.Label((local.Completed ? "✅ " : "⬜ ") + local.Title, title: true),
++                AppUi.Label((local.DueDate is null ? "Geen vaste datum" : local.DueDate.Value.ToString("dd-MM-yyyy")) + (string.IsNullOrWhiteSpace(local.Details) ? "" : " · " + local.Details)),
++                AppUi.AsyncButton(local.Completed ? "↩️ Weer openzetten" : "✅ Afvinken", async () => { WorkspaceRecordService.CompleteTask(AppSession.Store!, local, !local.Completed); AppSession.Touch(); Build(role); }, quiet: true),
++                AppUi.AsyncButton("🗑️ Taak verwijderen", async () => { if (await DisplayAlertAsync("Taak verwijderen?", "Deze taak wordt definitief verwijderd.", "Verwijderen", "Annuleren")) { AppSession.Store!.Delete("workspacetask", local.Id); AppSession.Touch(); Build(role); } }, quiet: true))));
++        }
++    }
++
++    void AddFamilyUpdateDraft(string role)
++    {
++        _root.Children.Add(AppUi.Title("Bericht voor familie / gesprek voorbereiden"));
++        _familyUpdateTitle = AppUi.Entry("Onderwerp (bijvoorbeeld: punten voor het gesprek)");
++        _familyUpdateMessage = AppUi.Editor("Schrijf een conceptbericht of puntenlijst…", height: 110);
++        _root.Children.Add(_familyUpdateTitle);
++        _root.Children.Add(_familyUpdateMessage);
++        _root.Children.Add(AppUi.AsyncButton("💾 Concept bewaren (niet versturen)", async () =>
++        {
++            try
++            {
++                var item = WorkspaceRecordService.CreateFamilyUpdate(Guid.NewGuid(), DateTime.Now, role, _familyUpdateTitle?.Text, _familyUpdateMessage?.Text);
++                WorkspaceRecordService.SaveFamilyUpdate(AppSession.Store ?? throw new InvalidOperationException("Log eerst in."), item);
++                AppSession.Touch(); Build(role); _status.Text = "Concept bewaard. Er is niets verstuurd.";
++            }
++            catch (Exception ex) when (ex is ArgumentException or InvalidOperationException) { _status.Text = ex.Message; }
++            await Task.CompletedTask;
++        }));
++        foreach (var item in WorkspaceRecordService.GetFamilyUpdates(AppSession.Store!).Take(10))
++        {
++            var local = item;
++            _root.Children.Add(AppUi.Card(AppUi.Stack(AppUi.Label(local.Title, title: true), AppUi.Label($"{local.Created:dd-MM-yyyy HH:mm} · {local.Status}", muted: true), AppUi.Label(local.Message),
++                AppUi.AsyncButton("🗑️ Concept verwijderen", async () => { if (await DisplayAlertAsync("Concept verwijderen?", "Het concept wordt definitief verwijderd.", "Verwijderen", "Annuleren")) { AppSession.Store!.Delete("familyupdate", local.Id); AppSession.Touch(); Build(role); } }, quiet: true))));
++        }
++    }
++
++    void AddExportSection(string role)
++    {
++        _root.Children.Add(AppUi.AsyncButton("📄 Mijn omgeving als tekst exporteren", async () =>
++        {
++            if (!await DisplayAlertAsync("Tekst exporteren?", "Het tekstbestand is niet versleuteld. Bewaar of verstuur het alleen als je zeker weet dat de inhoud gedeeld mag worden.", "Exporteren", "Annuleren")) return;
++            var sb = new StringBuilder();
++            sb.AppendLine("MoodPress — " + role).AppendLine("Gemaakt: " + DateTime.Now.ToString("dd-MM-yyyy HH:mm")).AppendLine();
++            foreach (var note in WorkspaceRecordService.GetNotes(AppSession.Store!, role)) sb.AppendLine($"[{note.Created:dd-MM-yyyy HH:mm}] {note.Category}: {note.Title}
+{note.Text}
+");
++            foreach (var task in WorkspaceRecordService.GetTasks(AppSession.Store!, role)) sb.AppendLine($"[{(task.Completed ? "Afgerond" : "Open")}] {task.Title} — {(task.DueDate?.ToString("dd-MM-yyyy") ?? "geen datum")}
+{task.Details}
+");
++            if (role == WorkspaceRoleService.ParentGuardian)
++                foreach (var update in WorkspaceRecordService.GetFamilyUpdates(AppSession.Store!)) sb.AppendLine($"[Concept, niet gedeeld] {update.Title}
+{update.Message}
+");
++            var path = Path.Combine(FileSystem.CacheDirectory, $"MoodPress-{role.Replace('/', '-')}-{DateTime.Now:yyyyMMdd-HHmm}.txt");
++            await File.WriteAllTextAsync(path, sb.ToString(), new UTF8Encoding(false));
++            await Share.Default.RequestAsync(new ShareFileRequest { Title = "MoodPress-omgeving exporteren", File = new ShareFile(path) });
++        }, quiet: true));
++    }
++
++    void AddOpen(string label, Func<Task> action, bool quiet = false) => _root.Children.Add(AppUi.AsyncButton(label, action, quiet));
++}
