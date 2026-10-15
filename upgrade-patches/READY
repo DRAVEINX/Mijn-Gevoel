@@ -17,3 +17,5 @@ Retry after targeted Windows patch and identity fixes.
 Retry with shared Windows feature patch applied and only metadata hunk tolerated.
 
 Build and validate signed phone and tablet release APKs with latest patch handling.
+
+Rebuild after restoring clean APK validation workflow.
