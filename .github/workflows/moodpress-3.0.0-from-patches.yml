@@ -64,6 +64,9 @@ jobs:
           gzip --decompress --stdout /tmp/moodpress-3.1.0.patch.gz > /tmp/moodpress-3.1.0.patch
           (cd source && patch --batch --forward -p1 < /tmp/moodpress-3.1.0.patch)
 
+          test -f upgrade-patches/07-fix-pdf-date-nullability.patch
+          (cd source && patch --batch --forward -p1 < ../upgrade-patches/07-fix-pdf-date-nullability.patch)
+
           test -f source/MijnGevoel-Android/MijnGevoel.Core/Data/WorkspaceReportService.cs
           test -f source/MijnGevoel-Android/MijnGevoel.Tests/WorkspaceReportServiceTests.cs
           test -f source/MijnGevoel-Android/RELEASE-NOTES-3.1.0.md
@@ -101,7 +104,7 @@ jobs:
               if not (root/'MijnGevoel.Android'/name).is_file(): raise SystemExit(f'Ontbreekt: {name}')
           for p in ['MijnGevoel.Tests/WorkspaceReportServiceTests.cs','RELEASE-NOTES-3.1.0.md','docs/quality/WORKSPACES-3.1.0.md']:
               if not (root/p).is_file(): raise SystemExit(f'Ontbreekt: {p}')
-          print(f'Statische controles geslaagd voor MoodPress {actual[3]} met {len(entries)} features.')
+          report_ui=(root/'MijnGevoel.Android/WorkspacePage.cs').read_text(encoding='utf-8')\n          if 'var reportStart = (startDate.Date ??' not in report_ui or 'endDate.Date.Date' in report_ui:\n              raise SystemExit('Nullable datumcontrole voor PDF rapport is niet correct.')\n          print(f'Statische controles geslaagd voor MoodPress {actual[3]} met {len(entries)} features.')
           PY
           (cd source && zip -qr -X ../MoodPress-Android-compleet-3.1.0.zip MijnGevoel-Android)
           unzip -t MoodPress-Android-compleet-3.1.0.zip
