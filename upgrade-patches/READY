@@ -9,3 +9,5 @@ Trigger the incremental MoodPress 3.1.0 PDF report and explicit share package up
 Re-run 3.1.0 after correcting nullable PDF date picker handling.
 
 Build MoodPress 3.2.0 with text-to-speech accessibility on Android and Windows.
+
+Retry 3.2.0 after correcting MAUI text-to-speech cancellation and Stop behavior.
