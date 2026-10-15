@@ -239,7 +239,20 @@ jobs:
               file "$apk" >&2 || true
               exit 1
             fi
-            if ! unzip -Z1 "$apk" | grep -Eq '(^|/)AndroidManifest\.xml
+            if ! unzip -Z1 "$apk" | grep -Fq 'AndroidManifest.xml'; then
+              echo "AndroidManifest.xml ontbreekt in $apk. Inhoud van APK:" >&2
+              unzip -Z1 "$apk" | head -n 80 >&2 || true
+              exit 1
+            fi
+            echo "APK-controle geslaagd: $apk"
+          done
+          if [ -s MoodPress-Android-compleet-3.3.0.zip ]; then
+            cp MoodPress-Android-compleet-3.3.0.zip artifacts/
+          fi
+          (cd artifacts && sha256sum MoodPress-Android-Telefoon-3.3.0-debug.apk MoodPress-Android-Tablet-3.3.0-debug.apk > SHA256SUMS.txt)
+          if [ -s artifacts/MoodPress-Android-compleet-3.3.0.zip ]; then
+            (cd artifacts && sha256sum MoodPress-Android-compleet-3.3.0.zip >> SHA256SUMS.txt)
+          fi
 
       - name: Upload phone and tablet test APKs and checksums
         uses: actions/upload-artifact@v4
