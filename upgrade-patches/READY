@@ -36,3 +36,5 @@ Retry Windows MSI after fixing WiX wildcard harvest.
 Retry Windows MSI after removing duplicate MainExecutable component.
 
 Start iPhone/iPad signed device release workflow after adding signing job.
+
+Build signed Android 3.3.0 phone and tablet AAB bundles.
