@@ -11,3 +11,5 @@ Retry after portable Windows patch filtering and workflow validation repair.
 Rebuild after consolidated Android workflow repair.
 
 Run current repaired signed phone and tablet release workflow.
+
+Retry after targeted Windows patch and identity fixes.
