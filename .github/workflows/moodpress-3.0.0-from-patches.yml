@@ -104,7 +104,10 @@ jobs:
               if not (root/'MijnGevoel.Android'/name).is_file(): raise SystemExit(f'Ontbreekt: {name}')
           for p in ['MijnGevoel.Tests/WorkspaceReportServiceTests.cs','RELEASE-NOTES-3.1.0.md','docs/quality/WORKSPACES-3.1.0.md']:
               if not (root/p).is_file(): raise SystemExit(f'Ontbreekt: {p}')
-          report_ui=(root/'MijnGevoel.Android/WorkspacePage.cs').read_text(encoding='utf-8')\n          if 'var reportStart = (startDate.Date ??' not in report_ui or 'endDate.Date.Date' in report_ui:\n              raise SystemExit('Nullable datumcontrole voor PDF rapport is niet correct.')\n          print(f'Statische controles geslaagd voor MoodPress {actual[3]} met {len(entries)} features.')
+          report_ui=(root/'MijnGevoel.Android/WorkspacePage.cs').read_text(encoding='utf-8')
+          if 'var reportStart = (startDate.Date ??' not in report_ui or 'endDate.Date.Date' in report_ui:
+              raise SystemExit('Nullable datumcontrole voor PDF rapport is niet correct.')
+          print(f'Statische controles geslaagd voor MoodPress {actual[3]} met {len(entries)} features.')
           PY
           (cd source && zip -qr -X ../MoodPress-Android-compleet-3.1.0.zip MijnGevoel-Android)
           unzip -t MoodPress-Android-compleet-3.1.0.zip
