@@ -1,0 +1,12 @@
+diff --git a/MijnGevoel-Android/MijnGevoel.Android/FeaturePage.cs b/MijnGevoel-Android/MijnGevoel.Android/FeaturePage.cs
+--- a/MijnGevoel-Android/MijnGevoel.Android/FeaturePage.cs
++++ b/MijnGevoel-Android/MijnGevoel.Android/FeaturePage.cs
+@@ -1585,6 +1585,11 @@
+         Add(quickGrid);
+         Add(quickStatus);
+         Add(AppUi.Card(quickHelp));
++        Add(AppUi.Button("❔ Ik kan niet uitleggen hoe ik me voel", () =>
++            _ = SaveQuickFeelingAsync("Ik weet het niet", quickStatus, quickHelp), quiet: true));
++        AddLabel("Je hoeft niet precies te weten wat je voelt. Je mag ook alleen hulp of rust kiezen.", muted: true);
+ 
+         var feelings = new (string Emoji, string Name, string Hex)[]
