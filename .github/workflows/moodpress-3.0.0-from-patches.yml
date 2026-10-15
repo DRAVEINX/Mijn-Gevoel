@@ -381,7 +381,20 @@ jobs:
           for bundle in release-artifacts/*.aab; do
             test -s "$bundle"
             unzip -t "$bundle" >/dev/null
-            zipinfo -1 "$bundle" | grep -q '^base/manifest/AndroidManifest.xml        shell: bash
+            zipinfo -1 "$bundle" | grep -q '^base/manifest/AndroidManifest.xml$'
+          done
+          (cd release-artifacts && sha256sum *.aab > AAB-SHA256SUMS.txt)
+
+      - name: Upload signed phone and tablet release AABs
+        uses: actions/upload-artifact@v4
+        with:
+          name: MoodPress-Android-Phone-Tablet-3.3.0-release-AAB
+          path: release-artifacts/*.aab
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Verify and upload signed release APKs
+        shell: bash
         run: |
           set -euo pipefail
           sdk="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
@@ -400,7 +413,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: MoodPress-Android-Phone-Tablet-3.3.0-release
-          path: release-artifacts/
+          path: release-artifacts/*.apk
           if-no-files-found: error
           retention-days: 30
 
