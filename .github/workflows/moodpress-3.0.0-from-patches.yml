@@ -187,7 +187,7 @@ jobs:
             -p:ApplicationId=nl.mijngevoel.app.tablet.debug \
             "-p:ApplicationTitle=MoodPress Tablet Test"
           output='MijnGevoel.Android/bin/Debug/net10.0-android'
-          tablet_apk="$(find "$output" -type f -iname '*.apk' -printf '%T@ %p\n' | sort -nr | head -n 1 | cut -d' ' -f2-)"
+          tablet_apk="$(find "$output" -type f -iname '*tablet.debug*apk' -printf '%T@ %p\n' | sort -nr | head -n 1 | cut -d' ' -f2-)"
           test -n "$tablet_apk" && test -f "$tablet_apk"
           cp "$tablet_apk" artifacts/MoodPress-Android-Tablet-3.2.0-debug.apk
 
@@ -197,8 +197,26 @@ jobs:
           set -euo pipefail
           test -s artifacts/MoodPress-Android-Telefoon-3.2.0-debug.apk
           test -s artifacts/MoodPress-Android-Tablet-3.2.0-debug.apk
-          unzip -t artifacts/MoodPress-Android-Telefoon-3.2.0-debug.apk
-          unzip -t artifacts/MoodPress-Android-Tablet-3.2.0-debug.apk
+          python3 - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile
+          names = [
+              "MoodPress-Android-Telefoon-3.2.0-debug.apk",
+              "MoodPress-Android-Tablet-3.2.0-debug.apk",
+          ]
+          for name in names:
+              path = Path("artifacts") / name
+              try:
+                  with ZipFile(path) as apk:
+                      bad_entry = apk.testzip()
+                      if bad_entry:
+                          raise SystemExit(f"{name}: beschadigde APK-entry: {bad_entry}")
+                      if "AndroidManifest.xml" not in apk.namelist():
+                          raise SystemExit(f"{name}: AndroidManifest.xml ontbreekt")
+              except Exception as exc:
+                  raise SystemExit(f"APK-validatie mislukt voor {name}: {exc}") from exc
+              print(f"APK-validatie geslaagd: {name}")
+          PY
           cp MoodPress-Android-compleet-3.2.0.zip artifacts/
           (cd artifacts && sha256sum MoodPress-Android-Telefoon-3.2.0-debug.apk MoodPress-Android-Tablet-3.2.0-debug.apk MoodPress-Android-compleet-3.2.0.zip > SHA256SUMS.txt)
 
