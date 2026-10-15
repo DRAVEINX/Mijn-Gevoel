@@ -21,3 +21,5 @@ Build and validate signed phone and tablet release APKs with latest patch handli
 Rebuild after restoring clean APK validation workflow.
 
 Build signed phone and tablet release APKs after debug validation.
+
+Run release repair workflow in a fresh concurrency group.
