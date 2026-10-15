@@ -44,3 +44,5 @@ Retry phone and tablet AAB workflow after fixing misplaced YAML block.
 Retry Android AAB build after removing duplicate workflow jobs: 2026-10-15
 
 Retry after removing stray AAB YAML lines at line 769: 2026-10-15
+Windows MSI repair applied: remove stale StartApp CustomAction and Finish Publish after harvest.
+Accessibility/full-feature integration build requested: 2026-10-15.
