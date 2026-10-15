@@ -19,3 +19,4 @@ Retry with shared Windows feature patch applied and only metadata hunk tolerated
 Build and validate signed phone and tablet release APKs with latest patch handling.
 
 Run tablet repair build in fresh concurrency group.
+# Retry Android phone/tablet build after workflow fixes: 2026-10-15
