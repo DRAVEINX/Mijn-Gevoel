@@ -1,0 +1,125 @@
+--- /dev/null
++++ b/MijnGevoel-Android/MijnGevoel.Tests/WorkspaceRoleServiceTests.cs
+@@ -0,0 +1,75 @@
++using MijnGevoel.Core.Data;
++using Xunit;
++
++namespace MijnGevoel.Tests;
++
++public sealed class WorkspaceRoleServiceTests
++{
++    [Theory]
++    [InlineData("Gebruiker", "Gebruiker")]
++    [InlineData("begeleider", "Begeleider")]
++    [InlineData("OUDER/VOOGD", "Ouder/voogd")]
++    [InlineData(" onbekende rol ", "Gebruiker")]
++    [InlineData(null, "Gebruiker")]
++    public void NormalizeUsesKnownSafeDefault(string? input, string expected) =>
++        Assert.Equal(expected, WorkspaceRoleService.Normalize(input));
++
++    [Fact]
++    public void ParentAndCaregiverCannotOpenPersonalDiaryFeaturesFromWorkspaceNavigation()
++    {
++        foreach (var role in new[] { WorkspaceRoleService.Caregiver, WorkspaceRoleService.ParentGuardian })
++        {
++            Assert.False(WorkspaceRoleService.CanAccessFeature(role, "Journal"));
++            Assert.False(WorkspaceRoleService.CanAccessFeature(role, "Draw"));
++            Assert.False(WorkspaceRoleService.CanAccessFeature(role, "MoodInsights"));
++            Assert.True(WorkspaceRoleService.CanAccessFeature(role, "Agenda"));
++            Assert.True(WorkspaceRoleService.CanAccessFeature(role, "ReceiveSupport"));
++        }
++    }
++
++    [Fact]
++    public void UserCanChoosePersonalFeaturesAndUnknownKeysAreDeniedForSupportRoles()
++    {
++        Assert.True(WorkspaceRoleService.CanAccessFeature(WorkspaceRoleService.Personal, "Journal"));
++        Assert.False(WorkspaceRoleService.CanAccessFeature(WorkspaceRoleService.Caregiver, "NotARealFeature"));
++        Assert.False(WorkspaceRoleService.CanAccessFeature(WorkspaceRoleService.ParentGuardian, null));
++    }
++
++    [Fact]
++    public void SetRolePersistsKnownWorkspaceChoiceInSettings()
++    {
++        var settings = new UserSettings();
++        Assert.True(WorkspaceRoleService.SetRole(settings, "Begeleider"));
++        Assert.Equal("Begeleider", settings.WorkspaceRole);
++        Assert.False(WorkspaceRoleService.SetRole(settings, "begeleider"));
++        Assert.Equal("Begeleider", settings.WorkspaceRole);
++    }
++
++    [Theory]
++    [InlineData("Gebruiker")]
++    [InlineData("Begeleider")]
++    [InlineData("Ouder/voogd")]
++    public void NotesRequireTitleAndBodyAndKeepWorkspaceRole(string role)
++    {
++        var note = WorkspaceRecordService.CreateNote(Guid.NewGuid(), DateTime.UtcNow, role, "Test", "  Titel ", "  Tekst  ");
++        Assert.Equal(role, note.WorkspaceRole);
++        Assert.Equal("Titel", note.Title);
++        Assert.Equal("Tekst", note.Text);
++    }
++
++    [Fact]
++    public void FamilyUpdatesCanOnlyBeCreatedInParentGuardianWorkspaceAndAreDrafts()
++    {
++        Assert.Throws<InvalidOperationException>(() => WorkspaceRecordService.CreateFamilyUpdate(Guid.NewGuid(), DateTime.UtcNow, "Begeleider", "Onderwerp", "Bericht"));
++        var update = WorkspaceRecordService.CreateFamilyUpdate(Guid.NewGuid(), DateTime.UtcNow, "Ouder/voogd", "Onderwerp", "Bericht");
++        Assert.Equal("Concept — niet gedeeld", update.Status);
++    }
++
++    [Fact]
++    public void NoteAndTaskInputAreValidated()
++    {
++        Assert.Throws<ArgumentException>(() => WorkspaceRecordService.CreateNote(Guid.NewGuid(), DateTime.UtcNow, "Gebruiker", "Test", "", "Tekst"));
++        Assert.Throws<ArgumentException>(() => WorkspaceRecordService.CreateNote(Guid.Empty, DateTime.UtcNow, "Gebruiker", "Test", "Titel", "Tekst"));
++        Assert.Throws<ArgumentException>(() => WorkspaceRecordService.CreateTask(Guid.NewGuid(), DateTime.UtcNow, null, "Begeleider", "", "Details"));
++    }
++}
+--- a/MijnGevoel-Android/MijnGevoel.Android/MijnGevoel.Android.csproj
++++ b/MijnGevoel-Android/MijnGevoel.Android/MijnGevoel.Android.csproj
+@@ -9,8 +9,8 @@
+     <Nullable>enable</Nullable>
+     <ApplicationTitle>MoodPress</ApplicationTitle>
+     <ApplicationId>nl.mijngevoel.app</ApplicationId>
+-    <ApplicationDisplayVersion>2.5.2</ApplicationDisplayVersion>
+-    <ApplicationVersion>34</ApplicationVersion>
++    <ApplicationDisplayVersion>3.0.0</ApplicationDisplayVersion>
++    <ApplicationVersion>35</ApplicationVersion>
+     <SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">23.0</SupportedOSPlatformVersion>
+     <TargetPlatformMinVersion>23.0</TargetPlatformMinVersion>
+     <AndroidPackageFormat>apk</AndroidPackageFormat>
+--- a/MijnGevoel-Android/MijnGevoel.Desktop/MijnGevoel.Desktop.csproj
++++ b/MijnGevoel-Android/MijnGevoel.Desktop/MijnGevoel.Desktop.csproj
+@@ -7,7 +7,7 @@
+     <ImplicitUsings>enable</ImplicitUsings>
+     <AssemblyName>MoodPress</AssemblyName>
+     <RootNamespace>MijnGevoel.Desktop</RootNamespace>
+-    <Version>2.2</Version>
++    <Version>3.0.0</Version>
+     <ApplicationIcon>Assets\MijnGevoel.ico</ApplicationIcon>
+     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+   </PropertyGroup>
+--- a/MijnGevoel-Android/MijnGevoel.Desktop/Views/HomeView.cs
++++ b/MijnGevoel-Android/MijnGevoel.Desktop/Views/HomeView.cs
+@@ -10,6 +10,11 @@
+ {
+     public HomeView()
+     {
++        if (WorkspaceRoleService.Normalize(Session.Settings.WorkspaceRole) != WorkspaceRoleService.Personal)
++        {
++            Content = new WorkspaceView();
++            return;
++        }
+         var saved = Ui.Label("", muted: true);
+         var moodRow = new UniformGrid { Columns = 5, Margin = new Thickness(0, 0, 0, 8) };
+         for (int i = 0; i < 5; i++)
+@@ -58,6 +63,8 @@
+             new NavItem("🗒️", "Weekoverzicht", () => new WeekView()),
+             new NavItem("⚙️", "Instellingen", () => new SettingsView()),
+             new NavItem("❓", "Hulp", () => new HelpView())));
++        cats.Children.Add(Group("🧭", "Mijn omgeving",
++            new NavItem("💙", "Mijn ruimte / begeleiders / ouders", () => new WorkspaceView())));
+ 
+         var kids = new List<UIElement> { Ui.Label($"Hoi {Session.Username}!", title: true) };
+         int left = Session.Accounts.RecoveryCodesLeft(Session.Username);
