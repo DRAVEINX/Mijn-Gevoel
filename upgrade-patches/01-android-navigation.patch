@@ -128,10 +128,7 @@
          var voiceHelp = AppUi.Label("Je kunt ook een kort spraakbericht opnemen. Je opname wordt versleuteld op deze telefoon bewaard en niet verstuurd.", muted: true);
 @@ -2629,6 +2654,7 @@
          AddField("Mijn profiel", profile);
-         AddLabel("Kind: grote gevoel-/communicatie-ingangen en een voorspelbare dag.
-Jongere: stress, grenzen, school, vrienden en gesprekshulp.
-Volwassene: werk, dagbesteding, energie en persoonlijke doelen.
-Algemeen: alle bestaande functies zonder persoonlijk voorkeursprofiel.");
+         AddLabel("Kind: grote gevoel-/communicatie-ingangen en een voorspelbare dag.\nJongere: stress, grenzen, school, vrienden en gesprekshulp.\nVolwassene: werk, dagbesteding, energie en persoonlijke doelen.\nAlgemeen: alle bestaande functies zonder persoonlijk voorkeursprofiel.");
          AddAsyncButton("💾 Profiel bewaren", async () => { AppSession.Settings.AudienceProfile = profile.SelectedItem?.ToString() ?? "Algemeen"; AppSession.SaveSettings(); await DisplayAlertAsync("Opgeslagen", "Je profiel is opgeslagen. Ga terug naar het startscherm voor de passende snelkoppelingen.", "OK"); });
 +        AddButton("🧭 Mijn omgeving kiezen", () => Navigation.PushAsync(new WorkspacePage()), quiet:true);
          AddButton("⚙️ Toegankelijkheid aanpassen", () => Navigation.PushAsync(new FeaturePage(FeatureKind.Settings)), quiet:true);
