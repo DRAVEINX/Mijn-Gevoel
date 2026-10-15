@@ -222,6 +222,7 @@ jobs:
           cp "$tablet_apk" artifacts/MoodPress-Android-Tablet-3.3.0-debug.apk
 
       - name: Validate phone APK, tablet APK and generate checksums
+        working-directory: source/MijnGevoel-Android
         shell: bash
         run: |
           set -euo pipefail
@@ -246,8 +247,8 @@ jobs:
             fi
             echo "APK-controle geslaagd: $apk"
           done
-          if [ -s MoodPress-Android-compleet-3.3.0.zip ]; then
-            cp MoodPress-Android-compleet-3.3.0.zip artifacts/
+          if [ -s ../../MoodPress-Android-compleet-3.3.0.zip ]; then
+            cp ../../MoodPress-Android-compleet-3.3.0.zip artifacts/
           fi
           (cd artifacts && sha256sum MoodPress-Android-Telefoon-3.3.0-debug.apk MoodPress-Android-Tablet-3.3.0-debug.apk > SHA256SUMS.txt)
           if [ -s artifacts/MoodPress-Android-compleet-3.3.0.zip ]; then
@@ -258,7 +259,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: MoodPress-Android-Phone-Tablet-3.3.0-test-apks
-          path: artifacts/
+          path: source/MijnGevoel-Android/artifacts/
           if-no-files-found: error
           retention-days: 14
 
