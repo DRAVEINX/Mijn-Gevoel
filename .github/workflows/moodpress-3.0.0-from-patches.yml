@@ -231,7 +231,7 @@ jobs:
           test -s "$tablet"
           for apk in "$phone" "$tablet"; do
             unzip -t "$apk" >/dev/null
-            zipinfo -1 "$apk" | grep -q 'AndroidManifest.xml'
+            zipinfo -1 "$apk" | grep 'AndroidManifest.xml' >/dev/null
           done
           cp MoodPress-Android-compleet-3.3.0.zip artifacts/
           (cd artifacts && sha256sum MoodPress-Android-Telefoon-3.3.0-debug.apk MoodPress-Android-Tablet-3.3.0-debug.apk MoodPress-Android-compleet-3.3.0.zip > SHA256SUMS.txt)
