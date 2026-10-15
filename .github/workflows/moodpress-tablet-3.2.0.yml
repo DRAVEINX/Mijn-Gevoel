@@ -115,7 +115,7 @@ jobs:
           target='--- a/MijnGevoel-Android/MijnGevoel.Android/MijnGevoel.Android.csproj'
           p.write_text(''.join(section for section in sections if not section.startswith(target)),encoding='utf-8')
           PY
-          (cd source && patch --batch --forward -p1 < /tmp/moodpress-windows-3.3.0.patch)
+          (cd source && patch --batch --forward --exclude='MijnGevoel.Android.csproj' -p1 < /tmp/moodpress-windows-3.3.0.patch)
 
       - name: Set tablet package identity and validate features
         shell: bash
