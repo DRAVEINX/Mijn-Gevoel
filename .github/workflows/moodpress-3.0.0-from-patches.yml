@@ -157,7 +157,7 @@ jobs:
           dotnet restore MijnGevoel.Tests/MijnGevoel.Tests.csproj
           dotnet test MijnGevoel.Tests/MijnGevoel.Tests.csproj --configuration Release --no-restore --logger "console;verbosity=normal"
 
-      - name: Build Android Debug test APK
+      - name: Build Android phone test APK
         working-directory: source/MijnGevoel-Android
         shell: bash
         run: |
@@ -168,25 +168,44 @@ jobs:
             --framework net10.0-android \
             -p:AndroidPackageFormat=apk \
             -p:ApplicationId=nl.mijngevoel.app.debug \
-            "-p:ApplicationTitle=MoodPress Test"
+            "-p:ApplicationTitle=MoodPress Telefoon Test"
+          output='MijnGevoel.Android/bin/Debug/net10.0-android'
+          phone_apk="$(find "$output" -type f -iname '*app.debug*apk' -printf '%T@ %p\n' | sort -nr | head -n 1 | cut -d' ' -f2-)"
+          test -n "$phone_apk" && test -f "$phone_apk"
+          mkdir -p artifacts
+          cp "$phone_apk" artifacts/MoodPress-Android-Telefoon-3.2.0-debug.apk
 
-      - name: Validate APK and generate checksums
+      - name: Build Android tablet test APK
+        working-directory: source/MijnGevoel-Android
         shell: bash
         run: |
           set -euo pipefail
-          output='source/MijnGevoel-Android/MijnGevoel.Android/bin/Debug/net10.0-android'
-          apk="$(find "$output" -type f -iname '*.apk' -printf '%T@ %p\n' | sort -nr | head -n 1 | cut -d' ' -f2-)"
-          test -n "$apk" && test -f "$apk"
-          unzip -t "$apk"
-          mkdir -p artifacts
-          cp "$apk" artifacts/MoodPress-Android-3.2.0-debug.apk
-          cp MoodPress-Android-compleet-3.2.0.zip artifacts/
-          (cd artifacts && sha256sum MoodPress-Android-3.2.0-debug.apk MoodPress-Android-compleet-3.2.0.zip > SHA256SUMS.txt)
+          dotnet publish MijnGevoel.Android/MijnGevoel.Android.csproj \
+            --configuration Debug \
+            --framework net10.0-android \
+            -p:AndroidPackageFormat=apk \
+            -p:ApplicationId=nl.mijngevoel.app.tablet.debug \
+            "-p:ApplicationTitle=MoodPress Tablet Test"
+          output='MijnGevoel.Android/bin/Debug/net10.0-android'
+          tablet_apk="$(find "$output" -type f -iname '*tablet.debug*apk' -printf '%T@ %p\n' | sort -nr | head -n 1 | cut -d' ' -f2-)"
+          test -n "$tablet_apk" && test -f "$tablet_apk"
+          cp "$tablet_apk" artifacts/MoodPress-Android-Tablet-3.2.0-debug.apk
 
-      - name: Upload test APK and checksums
+      - name: Validate phone APK, tablet APK and generate checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s artifacts/MoodPress-Android-Telefoon-3.2.0-debug.apk
+          test -s artifacts/MoodPress-Android-Tablet-3.2.0-debug.apk
+          unzip -t artifacts/MoodPress-Android-Telefoon-3.2.0-debug.apk
+          unzip -t artifacts/MoodPress-Android-Tablet-3.2.0-debug.apk
+          cp MoodPress-Android-compleet-3.2.0.zip artifacts/
+          (cd artifacts && sha256sum MoodPress-Android-Telefoon-3.2.0-debug.apk MoodPress-Android-Tablet-3.2.0-debug.apk MoodPress-Android-compleet-3.2.0.zip > SHA256SUMS.txt)
+
+      - name: Upload phone and tablet test APKs and checksums
         uses: actions/upload-artifact@v4
         with:
-          name: MoodPress-Android-3.2.0-test-apk
+          name: MoodPress-Android-Phone-Tablet-3.2.0-test-apks
           path: artifacts/
           if-no-files-found: error
           retention-days: 14
@@ -242,5 +261,93 @@ jobs:
         with:
           name: MoodPress-Windows-3.2.0-portable
           path: source/MijnGevoel-Android/artifacts/MoodPress-Windows-3.2.0-portable.zip
+          if-no-files-found: error
+          retention-days: 14
+
+  ios-simulator-build:
+    name: iPhone/iPad simulator build and shared regression tests
+    needs: upgrade-and-build
+    runs-on: xcode-27
+    timeout-minutes: 45
+    steps:
+      - name: Check out current feature branch
+        uses: actions/checkout@v4
+
+      - name: Download validated shared 3.2.0 source
+        uses: actions/download-artifact@v4
+        with:
+          name: MoodPress-Android-compleet-3.2.0-source
+          path: incoming
+
+      - name: Apply the iOS platform port to the same shared source
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive='incoming/MoodPress-Android-compleet-3.2.0.zip'
+          test -f "$archive"
+          unzip -t "$archive"
+          mkdir -p source artifacts/ios
+          unzip -q "$archive" -d source
+          test "$(find upgrade-patches -maxdepth 1 -type f -name '10-ios-part-*.b64' | wc -l)" -eq 6
+          cat upgrade-patches/10-ios-part-*.b64 > /tmp/moodpress-ios-3.2.0.patch.gz.b64
+          base64 --decode /tmp/moodpress-ios-3.2.0.patch.gz.b64 > /tmp/moodpress-ios-3.2.0.patch.gz
+          echo 'f2a679fdb5d8132d9813dd7f4d83b3a2e100fe5ffc7920503414a2560b9a659e  /tmp/moodpress-ios-3.2.0.patch.gz' | shasum -a 256 -c -
+          gzip --decompress --stdout /tmp/moodpress-ios-3.2.0.patch.gz > /tmp/moodpress-ios-3.2.0.patch
+          (cd source && patch --batch --forward -p1 < /tmp/moodpress-ios-3.2.0.patch)
+          project='source/MijnGevoel-Android/MijnGevoel.Android/MoodPress.iOS.csproj'
+          test -f "$project"
+          grep -q '<TargetFramework>net10.0-ios</TargetFramework>' "$project"
+          grep -q '<ApplicationDisplayVersion>3.2.0</ApplicationDisplayVersion>' "$project"
+          grep -q '<ApplicationVersion>37</ApplicationVersion>' "$project"
+          grep -q 'NSSpeechRecognitionUsageDescription' source/MijnGevoel-Android/MijnGevoel.Android/Platforms/iOS/Info.plist
+          grep -q 'NSFaceIDUsageDescription' source/MijnGevoel-Android/MijnGevoel.Android/Platforms/iOS/Info.plist
+          echo 'Shared 3.2.0 source and iOS platform adapters validated.'
+
+      - name: Set up .NET SDKs
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.401
+
+      - name: Verify Xcode and .NET versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          dotnet --list-sdks
+          dotnet --info
+
+      - name: Run shared Core regression tests on macOS
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet test source/MijnGevoel-Android/MijnGevoel.Tests/MijnGevoel.Tests.csproj --configuration Release --logger "console;verbosity=normal"
+
+      - name: Install .NET MAUI workload
+        run: dotnet workload install maui --version 10.0.401.1
+
+      - name: Build iOS Simulator app (unsigned)
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd source/MijnGevoel-Android/MijnGevoel.Android
+          if [[ "$(uname -m)" == "arm64" ]]; then RID='iossimulator-arm64'; else RID='iossimulator-x64'; fi
+          dotnet build MoodPress.iOS.csproj \
+            --configuration Debug \
+            --framework net10.0-ios \
+            -p:RuntimeIdentifier="$RID" \
+            -p:EnableCodeSigning=false
+          APP_PATH="$(find bin-ios/Debug/net10.0-ios -type d -name '*.app' -print -quit)"
+          test -n "$APP_PATH" || { echo 'No iOS Simulator .app bundle was produced.' >&2; find bin-ios/Debug -maxdepth 7 -print; exit 1; }
+          ditto "$APP_PATH" ../../../artifacts/ios/MoodPress-iOS-3.2.0-Simulator.app
+          ditto -c -k --sequesterRsrc --keepParent ../../../artifacts/ios/MoodPress-iOS-3.2.0-Simulator.app ../../../artifacts/ios/MoodPress-iOS-3.2.0-Simulator.zip
+          shasum -a 256 ../../../artifacts/ios/MoodPress-iOS-3.2.0-Simulator.zip | tee ../../../artifacts/ios/SHA256SUMS.txt
+
+      - name: Upload unsigned iOS Simulator build
+        uses: actions/upload-artifact@v4
+        with:
+          name: MoodPress-iOS-3.2.0-Simulator
+          path: artifacts/ios/*
           if-no-files-found: error
           retention-days: 14
