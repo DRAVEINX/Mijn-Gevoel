@@ -571,3 +571,127 @@ jobs:
           path: artifacts/ios/*
           if-no-files-found: error
           retention-days: 14
+
+  ios-device-release:
+    name: iPhone/iPad device build and signed IPA
+    needs: [upgrade-and-build, ios-simulator-build]
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - name: Check out release workflow and patches
+        uses: actions/checkout@v4
+
+      - name: Check Apple signing configuration
+        id: signing
+        shell: bash
+        env:
+          IOS_CERTIFICATE_P12_BASE64: ${{ secrets.IOS_CERTIFICATE_P12_BASE64 }}
+          IOS_CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
+          IOS_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
+          IOS_CODESIGN_KEY: ${{ secrets.IOS_CODESIGN_KEY }}
+          IOS_TEAM_ID: ${{ secrets.IOS_TEAM_ID }}
+        run: |
+          missing=()
+          for name in IOS_CERTIFICATE_P12_BASE64 IOS_CERTIFICATE_PASSWORD IOS_PROVISIONING_PROFILE_BASE64 IOS_CODESIGN_KEY IOS_TEAM_ID; do
+            if [[ -z "${!name}" ]]; then missing+=("$name"); fi
+          done
+          if (( ${#missing[@]} )); then
+            {
+              echo "## iPhone/iPad-release: ondertekening nog niet geconfigureerd"
+              echo
+              echo "De simulatorbuild is geslaagd, maar voor een installeerbare IPA ontbreken deze GitHub Actions secrets:"
+              for name in "${missing[@]}"; do echo "- `$name`"; done
+              echo
+              echo "Voeg deze waarden toe via Settings → Secrets and variables → Actions. Plaats certificaten, wachtwoorden of provisioningprofielen niet in de chat."
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Download the validated shared source
+        if: steps.signing.outputs.ready == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: MoodPress-Android-compleet-3.3.0-source
+          path: incoming
+          run-id: ${{ github.run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Prepare iOS device source
+        if: steps.signing.outputs.ready == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p source
+          unzip -q incoming/MoodPress-Android-compleet-3.3.0.zip -d source
+          test "$(find upgrade-patches -maxdepth 1 -type f -name '10-ios-part-*.b64' | wc -l)" -eq 6
+          cat upgrade-patches/10-ios-part-*.b64 > /tmp/moodpress-ios.patch.gz.b64
+          base64 -D -i /tmp/moodpress-ios.patch.gz.b64 -o /tmp/moodpress-ios.patch.gz
+          echo 'f2a679fdb5d8132d9813dd7f4d83b3a2e100fe5ffc7920503414a2560b9a659e  /tmp/moodpress-ios.patch.gz' | shasum -a 256 -c -
+          gzip -dc /tmp/moodpress-ios.patch.gz > /tmp/moodpress-ios.patch
+          (cd source && patch --batch --forward -p1 < /tmp/moodpress-ios.patch)
+          test -f source/MijnGevoel-Android/MijnGevoel.Android/MoodPress.iOS.csproj
+
+      - name: Install .NET and MAUI iOS workload
+        if: steps.signing.outputs.ready == 'true'
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.401
+
+      - name: Install MAUI workload
+        if: steps.signing.outputs.ready == 'true'
+        run: dotnet workload install maui --version 10.0.401.1
+
+      - name: Import Apple signing certificate and provisioning profile
+        if: steps.signing.outputs.ready == 'true'
+        shell: bash
+        env:
+          IOS_CERTIFICATE_P12_BASE64: ${{ secrets.IOS_CERTIFICATE_P12_BASE64 }}
+          IOS_CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
+          IOS_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
+        run: |
+          set -euo pipefail
+          KEYCHAIN="$RUNNER_TEMP/moodpress-signing.keychain-db"
+          security create-keychain -p "$IOS_CERTIFICATE_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$IOS_CERTIFICATE_PASSWORD" "$KEYCHAIN"
+          printf '%s' "$IOS_CERTIFICATE_P12_BASE64" | base64 -D > "$RUNNER_TEMP/apple-signing.p12"
+          security import "$RUNNER_TEMP/apple-signing.p12" -P "$IOS_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN"
+          security list-keychains -d user -s "$KEYCHAIN"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$IOS_CERTIFICATE_PASSWORD" "$KEYCHAIN"
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+          printf '%s' "$IOS_PROVISIONING_PROFILE_BASE64" | base64 -D > "$RUNNER_TEMP/moodpress.mobileprovision"
+          PROFILE_UUID=$(/usr/libexec/PlistBuddy -c 'Print UUID' /dev/stdin <<< "$(/usr/bin/security cms -D -i "$RUNNER_TEMP/moodpress.mobileprovision")")
+          cp "$RUNNER_TEMP/moodpress.mobileprovision" "$HOME/Library/MobileDevice/Provisioning Profiles/$PROFILE_UUID.mobileprovision"
+
+      - name: Build and verify signed iPhone/iPad IPA
+        if: steps.signing.outputs.ready == 'true'
+        shell: bash
+        env:
+          IOS_CODESIGN_KEY: ${{ secrets.IOS_CODESIGN_KEY }}
+          IOS_TEAM_ID: ${{ secrets.IOS_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          cd source/MijnGevoel-Android/MijnGevoel.Android
+          dotnet publish MoodPress.iOS.csproj --configuration Release --framework net10.0-ios --runtime ios-arm64 -p:ArchiveOnBuild=true -p:EnableCodeSigning=true -p:CodesignKey="$IOS_CODESIGN_KEY" -p:CodesignProvision="$IOS_TEAM_ID" -p:ApplicationDisplayVersion=3.3.0 -p:ApplicationVersion=38
+          mkdir -p ../../../artifacts/ios-device
+          IPA="$(find bin/Release/net10.0-ios -type f -name '*.ipa' -print -quit)"
+          if [[ -z "$IPA" ]]; then
+            IPA="$(find bin -type f -path '*Release*' -name '*.ipa' -print -quit)"
+          fi
+          test -n "$IPA" && test -s "$IPA"
+          cp "$IPA" ../../../artifacts/ios-device/MoodPress-iOS-3.3.0.ipa
+          unzip -t ../../../artifacts/ios-device/MoodPress-iOS-3.3.0.ipa
+          shasum -a 256 ../../../artifacts/ios-device/MoodPress-iOS-3.3.0.ipa > ../../../artifacts/ios-device/SHA256SUMS.txt
+
+      - name: Upload signed iPhone/iPad IPA
+        if: steps.signing.outputs.ready == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: MoodPress-iOS-3.3.0-Device-IPA
+          path: artifacts/ios-device/*
+          if-no-files-found: error
+          retention-days: 30
