@@ -198,7 +198,7 @@ jobs:
             -p:ApplicationId=nl.mijngevoel.app.tablet.debug \
             "-p:ApplicationTitle=MoodPress Tablet Test"
           output='MijnGevoel.Android/bin/Debug/net10.0-android'
-          tablet_apk="$(find "$output" -type f -iname '*tablet.debug*apk' -printf '%T@ %p\n' | sort -nr | head -n 1 | cut -d' ' -f2-)"
+          tablet_apk="$(find "$output" -type f -iname '*.apk' -printf '%T@ %p\n' | sort -nr | head -n 1 | cut -d' ' -f2-)"
           test -n "$tablet_apk" && test -f "$tablet_apk"
           cp "$tablet_apk" artifacts/MoodPress-Android-Tablet-3.3.0-debug.apk
 
