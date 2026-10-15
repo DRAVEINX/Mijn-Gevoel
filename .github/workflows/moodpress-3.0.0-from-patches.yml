@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: moodpress-3.3.0-upgrade
+  group: moodpress-3.3.0-release-repair-20261015
   cancel-in-progress: false
 
 jobs:
