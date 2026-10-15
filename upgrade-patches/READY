@@ -1,17 +1,1 @@
-MoodPress 3.0.0 patch set completed; trigger the isolated integration, tests and debug APK build.
-
-Retry after fixing an escaped-newline patch formatting issue.
-
-Retry after correcting patch line prefixes and escaped line breaks.
-
-Trigger the incremental MoodPress 3.1.0 PDF report and explicit share package upgrade; SHA-256 verified in CI.
-
-Re-run 3.1.0 after correcting nullable PDF date picker handling.
-
-Build MoodPress 3.2.0 with text-to-speech accessibility on Android and Windows.
-
-Retry 3.2.0 after correcting MAUI text-to-speech cancellation and Stop behavior.
-
-Retry 3.2.0 after correcting the unified diff hunk lengths for TTS cancellation.
-
-Full cross-platform build: Android phone + tablet APKs, Windows portable build, iOS simulator build, all using shared MoodPress 3.2.0 source and regression tests.
+Rebuild MoodPress 3.2.0 after APK validation and artifact selection fix.
