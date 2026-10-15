@@ -66,7 +66,19 @@ jobs:
           base64 --decode /tmp/moodpress-3.1.0.patch.gz.b64 > /tmp/moodpress-3.1.0.patch.gz
           echo 'ac4597e1e1ee71f5288cbba0789e2935e94228540449eb5b5b7305a24e850d1e  /tmp/moodpress-3.1.0.patch.gz' | sha256sum -c -
           gzip --decompress --stdout /tmp/moodpress-3.1.0.patch.gz > /tmp/moodpress-3.1.0.patch
-          (cd source && patch --batch --forward -p1 < /tmp/moodpress-3.1.0.patch)
+          # Keep the 3.1 features but skip its phone-project version hunk for the tablet archive.
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          patch_text = Path('/tmp/moodpress-3.1.0.patch').read_text(encoding='utf-8')
+          sections = re.split(r'(?=^--- )', patch_text, flags=re.M)
+          target = '--- a/MijnGevoel-Android/MijnGevoel.Android/MijnGevoel.Android.csproj'
+          filtered = [section for section in sections if not section.startswith(target)]
+          if len(filtered) == len(sections):
+              raise SystemExit('No tablet-incompatible project version section found in 3.1 patch')
+          Path('/tmp/moodpress-3.1.0-tablet.patch').write_text(''.join(filtered), encoding='utf-8')
+          PY
+          (cd source && patch --batch --forward -p1 < /tmp/moodpress-3.1.0-tablet.patch)
           (cd source && patch --batch --forward -p1 < ../upgrade-patches/07-fix-pdf-date-nullability.patch)
 
           test "$(find upgrade-patches -maxdepth 1 -type f -name '08-part-*.b64' | wc -l)" -eq 2
