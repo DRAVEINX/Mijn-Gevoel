@@ -14,7 +14,7 @@ index 9982e6f..7556e05 100644
 +        var composedMessage = AppUi.Label("Je boodschap verschijnt hier.", title: true);
 +        composedMessage.BackgroundColor = AppUi.SurfaceRaised;
 +        composedMessage.Padding = new Thickness(12);
-+        var composedButtons = new FlexLayout { Wrap = FlexWrap.Wrap, Direction = FlexDirection.Row, JustifyContent = FlexJustify.Start };
++        var composedButtons = new FlexLayout { Wrap = Microsoft.Maui.Layouts.FlexWrap.Wrap, Direction = Microsoft.Maui.Layouts.FlexDirection.Row, JustifyContent = Microsoft.Maui.Layouts.FlexJustify.Start };
 +        void RefreshComposedMessage()
 +        {
 +            composedMessage.Text = composedParts.Count == 0 ? "Je boodschap verschijnt hier." : string.Join(" ", composedParts);
