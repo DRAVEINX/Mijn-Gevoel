@@ -275,15 +275,13 @@ jobs:
           test -n "$apk" && test -s "$apk"
           cp "$apk" "$GITHUB_WORKSPACE/artifacts/MoodPress-Android-Tablet-3.3.0-release.apk"
 
-      - name: Validate phone APK, tablet APK and generate checksums
+      - name: Validate phone and tablet APKs, verify release signatures and generate checksums
         shell: bash
         run: |
           set -euo pipefail
           apks=(
             artifacts/MoodPress-Android-Telefoon-3.3.0-debug.apk
             artifacts/MoodPress-Android-Tablet-3.3.0-debug.apk
-            artifacts/MoodPress-Android-Telefoon-3.3.0-release.apk
-            artifacts/MoodPress-Android-Tablet-3.3.0-release.apk
             artifacts/MoodPress-Android-Telefoon-3.3.0-release.apk
             artifacts/MoodPress-Android-Tablet-3.3.0-release.apk
           )
@@ -295,13 +293,27 @@ jobs:
             test -s "$apk"
             echo "Controleer APK: $apk"
             unzip -t "$apk" >/dev/null
-            if ! zipinfo -1 "$apk" | grep -Eq '(^|/)AndroidManifest\.xml
+            if ! zipinfo -1 "$apk" | grep -Eq '(^|/)AndroidManifest[.]xml$'; then
+              echo "APK mist AndroidManifest.xml: $apk" >&2
+              exit 1
+            fi
+          done
+          "$signer" verify --verbose artifacts/MoodPress-Android-Telefoon-3.3.0-release.apk
+          "$signer" verify --verbose artifacts/MoodPress-Android-Tablet-3.3.0-release.apk
+          cp MoodPress-Android-compleet-3.3.0.zip artifacts/
+          (cd artifacts && sha256sum MoodPress-Android-Telefoon-3.3.0-debug.apk MoodPress-Android-Tablet-3.3.0-debug.apk MoodPress-Android-Telefoon-3.3.0-release.apk MoodPress-Android-Tablet-3.3.0-release.apk MoodPress-Android-compleet-3.3.0.zip > SHA256SUMS.txt)
 
-      - name: Upload phone and tablet test APKs and checksums
+      - name: Upload phone and tablet release APKs, test APKs and checksums
         uses: actions/upload-artifact@v4
         with:
-          name: MoodPress-Android-Phone-Tablet-3.3.0-test-apks
-          path: artifacts/
+          name: MoodPress-Android-Phone-Tablet-3.3.0-release-apks
+          path: |
+            artifacts/MoodPress-Android-Telefoon-3.3.0-debug.apk
+            artifacts/MoodPress-Android-Tablet-3.3.0-debug.apk
+            artifacts/MoodPress-Android-Telefoon-3.3.0-release.apk
+            artifacts/MoodPress-Android-Tablet-3.3.0-release.apk
+            artifacts/MoodPress-Android-compleet-3.3.0.zip
+            artifacts/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 14
 
