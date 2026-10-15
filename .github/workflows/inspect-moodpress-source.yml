@@ -1,0 +1,64 @@
+name: Inspect MoodPress source for complete upgrade
+on:
+  push:
+    branches:
+      - feature/complete-accessible-upgrade
+    paths:
+      - '.github/workflows/inspect-moodpress-source.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Validate and unpack current Android 2.5.2 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          unzip -t 'MoodPress-Android-compleet-2.5.2.zip'
+          mkdir -p source
+          unzip -q 'MoodPress-Android-compleet-2.5.2.zip' -d source
+          test -f source/MijnGevoel-Android/MijnGevoel.Android/MijnGevoel.Android.csproj
+          test -f source/MijnGevoel-Android/MijnGevoel.Core/MijnGevoel.Core.csproj
+          test -f source/MijnGevoel-Android/MijnGevoel.Tests/MijnGevoel.Tests.csproj
+      - name: Prepare source inspection and working source bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          root='source/MijnGevoel-Android'
+          find "$root" -type f | sort > artifacts/FILE-INVENTORY.txt
+          {
+            for f in \
+              MijnGevoel.Android/App.cs \
+              MijnGevoel.Android/AppShell.cs \
+              MijnGevoel.Android/DashboardPage.cs \
+              MijnGevoel.Android/MorePage.cs \
+              MijnGevoel.Android/FeatureCatalog.cs \
+              MijnGevoel.Android/FeaturePage.cs \
+              MijnGevoel.Android/AppSession.cs \
+              MijnGevoel.Core/Data/Models.cs \
+              MijnGevoel.Core/Data/VaultStore.cs \
+              MijnGevoel.Core/Data/BackupService.cs \
+              MijnGevoel.Core/MijnGevoel.Core.csproj \
+              MijnGevoel.Android/MijnGevoel.Android.csproj; do
+              if [ -f "$root/$f" ]; then
+                printf '\n\n================ %s ================\n' "$f"
+                sed -n '1,260p' "$root/$f"
+              fi
+            done
+          } > artifacts/KEY-SOURCE-FILES.txt
+          cd source
+          zip -qr "$GITHUB_WORKSPACE/artifacts/MoodPress-Android-2.5.2-unpacked-source.zip" MijnGevoel-Android
+      - name: Upload diagnostic bundle for implementation
+        uses: actions/upload-artifact@v4
+        with:
+          name: moodpress-source-inspection
+          path: artifacts/
+          if-no-files-found: error
+          retention-days: 7
