@@ -28,3 +28,5 @@ Run release repair workflow in a fresh concurrency group.
 # Retry with APK validation diagnostics: 2026-10-15
 # Retry after repairing malformed validation workflow: 2026-10-15
 # Start clean workflow after removing duplicate trailing YAML: 2026-10-15
+
+Build retry after correcting APK artifact paths.
