@@ -233,8 +233,13 @@ jobs:
             unzip -t "$apk" >/dev/null
             zipinfo -1 "$apk" | grep 'AndroidManifest.xml' >/dev/null
           done
-          cp MoodPress-Android-compleet-3.3.0.zip artifacts/
-          (cd artifacts && sha256sum MoodPress-Android-Telefoon-3.3.0-debug.apk MoodPress-Android-Tablet-3.3.0-debug.apk MoodPress-Android-compleet-3.3.0.zip > SHA256SUMS.txt)
+          if [ -s MoodPress-Android-compleet-3.3.0.zip ]; then
+            cp MoodPress-Android-compleet-3.3.0.zip artifacts/
+          fi
+          (cd artifacts && sha256sum MoodPress-Android-Telefoon-3.3.0-debug.apk MoodPress-Android-Tablet-3.3.0-debug.apk > SHA256SUMS.txt)
+          if [ -s artifacts/MoodPress-Android-compleet-3.3.0.zip ]; then
+            (cd artifacts && sha256sum MoodPress-Android-compleet-3.3.0.zip >> SHA256SUMS.txt)
+          fi
 
       - name: Upload phone and tablet test APKs and checksums
         uses: actions/upload-artifact@v4
