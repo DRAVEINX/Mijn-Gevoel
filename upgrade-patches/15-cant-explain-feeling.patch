@@ -1,7 +1,7 @@
 diff --git a/MijnGevoel-Android/MijnGevoel.Android/FeaturePage.cs b/MijnGevoel-Android/MijnGevoel.Android/FeaturePage.cs
 --- a/MijnGevoel-Android/MijnGevoel.Android/FeaturePage.cs
 +++ b/MijnGevoel-Android/MijnGevoel.Android/FeaturePage.cs
-@@ -1585,6 +1585,11 @@
+@@ -1585,5 +1585,8 @@
          Add(quickGrid);
          Add(quickStatus);
          Add(AppUi.Card(quickHelp));
