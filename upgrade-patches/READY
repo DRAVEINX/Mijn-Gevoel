@@ -47,3 +47,4 @@ Retry after removing stray AAB YAML lines at line 769: 2026-10-15
 Windows MSI repair applied: remove stale StartApp CustomAction and Finish Publish after harvest.
 Accessibility/full-feature integration build requested: 2026-10-15.
 Quick-help Home entry added through patch 12; validate phone/tablet build and MSI repair.
+13-multiple-feelings.patch: selectable additional feelings persisted with each encrypted check-in.
