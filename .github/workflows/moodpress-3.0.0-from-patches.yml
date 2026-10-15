@@ -495,6 +495,9 @@ jobs:
             # Remove the explicit EXE File row first to avoid duplicate MSI file entries.
             # Remove the explicit MainExecutable component so the wildcard harvest owns the EXE once.
             $wxs = [regex]::Replace($wxs, '(?s)\s*<Component\b(?=[^>]*\bId="MainExecutable")[^>]*>.*?</Component>', '')
+          # The Files harvest replaces the old explicit EXE component, so remove its stale launch action.
+          $wxs = $wxs.Replace('    <CustomAction Id="StartApp" FileRef="MijnGevoelExe" ExeCommand="" Return="asyncNoWait" />', '')
+          $wxs = $wxs.Replace('      <Publish Dialog="ExitDialog" Control="Finish" Event="DoAction" Value="StartApp" Condition="WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1 AND NOT Installed" />', '')
             $componentGroupEnd = '    </ComponentGroup>'
             $filesElement = '      <Files Include="$(PublishDir)\**" />' + [Environment]::NewLine + $componentGroupEnd
             $wxs = $wxs.Replace($componentGroupEnd, $filesElement)
