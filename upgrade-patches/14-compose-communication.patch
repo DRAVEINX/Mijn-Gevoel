@@ -1,0 +1,50 @@
+diff --git a/MijnGevoel.Android/FeaturePage.cs b/MijnGevoel.Android/FeaturePage.cs
+index 9982e6f..7556e05 100644
+--- a/MijnGevoel.Android/FeaturePage.cs
++++ b/MijnGevoel.Android/FeaturePage.cs
+@@ -1909,6 +1909,47 @@ public sealed partial class FeaturePage : ContentPage
+     {
+         Header("Kaarten om te laten zien", "Tik op een kaart om de tekst groot op het scherm te tonen. Handig als praten lastig is.");
+         foreach (var c in BasicCards) Add(AppUi.Button($"{c.Emoji}   {c.Text}", async () => await ShowBigCard(c.Emoji, c.Text), quiet: true));
++
++        // Compose a short message from communication cards for users who find free-form writing difficult.
++        AddLabel("Een boodschap samenstellen", title: true);
++        AddLabel("Tik op kaarten om woorden/zinnen aan je boodschap toe te voegen. Je kunt de boodschap laten voorlezen.", muted: true);
++        var composedParts = new List<string>();
++        var composedMessage = AppUi.Label("Je boodschap verschijnt hier.", title: true);
++        composedMessage.BackgroundColor = AppUi.SurfaceRaised;
++        composedMessage.Padding = new Thickness(12);
++        var composedButtons = new FlexLayout { Wrap = FlexWrap.Wrap, Direction = FlexDirection.Row, JustifyContent = FlexJustify.Start };
++        void RefreshComposedMessage()
++        {
++            composedMessage.Text = composedParts.Count == 0 ? "Je boodschap verschijnt hier." : string.Join(" ", composedParts);
++        }
++        foreach (var phrase in BasicCards)
++        {
++            var item = phrase;
++            var addPhrase = AppUi.Button($"{item.Emoji} {item.Text}", () =>
++            {
++                composedParts.Add(item.Text.Trim().TrimEnd('.', '!', '?'));
++                RefreshComposedMessage();
++            }, quiet: true);
++            addPhrase.MinimumHeightRequest = 48;
++            composedButtons.Children.Add(addPhrase);
++        }
++        foreach (var phrase in Store.All<TalkCard>("card").OrderBy(x => x.Text))
++        {
++            var item = phrase;
++            var addPhrase = AppUi.Button($"{item.Emoji} {item.Text}", () =>
++            {
++                composedParts.Add(item.Text.Trim().TrimEnd('.', '!', '?'));
++                RefreshComposedMessage();
++            }, quiet: true);
++            addPhrase.MinimumHeightRequest = 48;
++            composedButtons.Children.Add(addPhrase);
++        }
++        Add(composedButtons);
++        Add(AppUi.Card(composedMessage));
++        AddButton("🔊 Boodschap voorlezen", () => AppUi.Speak(string.Join(" ", composedParts)), quiet: true);
++        AddButton("↩ Laatste deel weghalen", () => { if (composedParts.Count > 0) composedParts.RemoveAt(composedParts.Count - 1); RefreshComposedMessage(); }, quiet: true);
++        AddButton("🧹 Boodschap leegmaken", () => { composedParts.Clear(); RefreshComposedMessage(); }, quiet: true);
++
+         AddLabel("Mijn eigen kaarten", title: true);
