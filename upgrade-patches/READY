@@ -40,3 +40,5 @@ Start iPhone/iPad signed device release workflow after adding signing job.
 Build signed Android 3.3.0 phone and tablet AAB bundles.
 
 Retry phone and tablet AAB workflow after fixing misplaced YAML block.
+
+Retry Android AAB build after removing duplicate workflow jobs: 2026-10-15
