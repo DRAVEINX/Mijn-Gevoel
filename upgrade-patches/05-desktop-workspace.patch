@@ -1,0 +1,179 @@
+--- /dev/null
++++ b/MijnGevoel-Android/MijnGevoel.Desktop/Views/WorkspaceView.cs
+@@ -0,0 +1,176 @@
++using System.Windows;
++using System.Windows.Controls;
++using MijnGevoel.Core.Data;
++
++namespace MijnGevoel.Desktop;
++
++/// <summary>Role-oriented local workspace for desktop. It never opens another account's private data.</summary>
++sealed class WorkspaceView : ViewBase
++{
++    readonly ComboBox _role = new() { MinWidth = 240, Padding = new Thickness(8), FontSize = 18 };
++    readonly TextBox _noteTitle = new() { MinWidth = 240, Padding = new Thickness(8), FontSize = 18 };
++    readonly ComboBox _category = new() { MinWidth = 240, Padding = new Thickness(8), FontSize = 18 };
++    readonly TextBox _noteText = new() { MinHeight = 100, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Padding = new Thickness(8), FontSize = 18 };
++    readonly TextBox _taskTitle = new() { MinWidth = 240, Padding = new Thickness(8), FontSize = 18 };
++    readonly TextBox _taskText = new() { MinHeight = 70, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Padding = new Thickness(8), FontSize = 18 };
++    readonly StackPanel _content = new() { Margin = new Thickness(8) };
++
++    public WorkspaceView()
++    {
++        _role.ItemsSource = WorkspaceRoleService.Roles;
++        _role.SelectedItem = WorkspaceRoleService.Normalize(Session.Settings.WorkspaceRole);
++        _role.SelectionChanged += (_, _) => RenderWorkspace();
++        Shell("Mijn MoodPress-omgeving", Ui.Page(
++            Ui.Label("Kies jouw ruimte", title: true),
++            Ui.Label("De gekozen ruimte bepaalt welke hulpmiddelen en eigen notities je snel ziet. Dit is geen uitnodiging om het account van iemand anders te gebruiken."),
++            Ui.Field("Omgeving", _role),
++            Ui.Btn("✅ Deze omgeving instellen", SaveRole),
++            Ui.Label("Persoonlijk: gevoelens, dagboek, tekeningen en rust. Begeleider: eigen taken, overdracht en lokaal rooster. Ouder/voogd: afspraken, vragen en conceptberichten."),
++            _content));
++        RenderWorkspace();
++    }
++
++    void SaveRole()
++    {
++        var value = _role.SelectedItem?.ToString();
++        WorkspaceRoleService.SetRole(Session.Settings, value);
++        Session.SaveSettings();
++        RenderWorkspace();
++        Ui.Info("Omgeving opgeslagen. Dit verandert geen deelrechten en geeft geen toegang tot andere accounts.");
++    }
++
++    void RenderWorkspace()
++    {
++        _content.Children.Clear();
++        var role = WorkspaceRoleService.Normalize(_role.SelectedItem?.ToString() ?? Session.Settings.WorkspaceRole);
++        _content.Children.Add(Ui.Label(role, title: true));
++        _content.Children.Add(Ui.Label(WorkspaceRoleService.Description(role)));
++
++        var quick = new WrapPanel { Margin = new Thickness(0, 4, 0, 12) };
++        void Route(string title, Func<UserControl> factory) => quick.Children.Add(Ui.Btn(title, () => MainWindow.Current.Navigate(factory()), soft: true));
++        if (role == WorkspaceRoleService.Personal)
++        {
++            Route("😊 Hoe voel ik me?", () => new MoodView());
++            Route("📓 Dagboek", () => new JournalView("diary", true, "Dagboek", "Hoe was je dag? Schrijf alleen op wat je wilt bewaren."));
++            Route("🎨 Tekenen", () => new DrawView());
++            Route("🖼️ Tekeningen", () => new GalleryView());
++            Route("🌿 Rust", () => new CalmView());
++            Route("🆘 Mijn hulpplan", () => new PlanView());
++        }
++        else if (role == WorkspaceRoleService.Caregiver)
++        {
++            Route("🗓️ Agenda", () => new AgendaView());
++            Route("✅ Routines", () => new RoutinesView());
++            Route("📅 Week", () => new WeekView());
++            Route("⚙️ Instellingen", () => new SettingsView());
++            Route("📤 Bewust gedeelde informatie", () => new ShareView(null));
++        }
++        else
++        {
++            Route("🗓️ Afspraken", () => new AgendaView());
++            Route("📅 Week", () => new WeekView());
++            Route("💬 Gesprek voorbereiden", () => new TalkPrepView());
++            Route("📤 Bewust gedeelde informatie", () => new ShareView(null));
++        }
++        _content.Children.Add(quick);
++
++        _category.ItemsSource = role switch
++        {
++            WorkspaceRoleService.Caregiver => new[] { "Overdracht", "Afspraak", "Reflectie", "Vraag" },
++            WorkspaceRoleService.ParentGuardian => new[] { "Vraag", "Familieafspraak", "Reflectie", "Steun" },
++            _ => new[] { "Dagnotitie", "Gevoel", "Idee", "Anders" }
++        };
++        _category.SelectedIndex = 0;
++        _noteTitle.Text = ""; _noteText.Text = ""; _taskTitle.Text = ""; _taskText.Text = "";
++        _content.Children.Add(Ui.Label(role == WorkspaceRoleService.Personal ? "Mijn eigen notitie" : role == WorkspaceRoleService.Caregiver ? "Eigen overdrachtsnotitie" : "Eigen vragen en steunnotitie", title: true));
++        _content.Children.Add(Ui.Field("Titel", _noteTitle));
++        _content.Children.Add(Ui.Field("Categorie", _category));
++        _content.Children.Add(Ui.Field("Notitie (privé, lokaal opgeslagen)", _noteText));
++        _content.Children.Add(Ui.Btn("💾 Notitie versleuteld bewaren", () => SaveNote(role)));
++        _content.Children.Add(Ui.Label("Eigen taken en afspraken", title: true));
++        _content.Children.Add(Ui.Field("Titel", _taskTitle));
++        _content.Children.Add(Ui.Field("Details (optioneel)", _taskText));
++        _content.Children.Add(Ui.Btn("➕ Taak bewaren", () => SaveTask(role), soft: true));
++
++        if (role == WorkspaceRoleService.ParentGuardian)
++        {
++            var updateTitle = new TextBox { Padding = new Thickness(8), FontSize = 18 };
++            var updateText = new TextBox { MinHeight = 75, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, Padding = new Thickness(8), FontSize = 18 };
++            _content.Children.Add(Ui.Label("Familie-update (concept, niet verstuurd)", title: true));
++            _content.Children.Add(Ui.Field("Onderwerp", updateTitle));
++            _content.Children.Add(Ui.Field("Bericht", updateText));
++            _content.Children.Add(Ui.Btn("💾 Concept bewaren", () =>
++            {
++                try
++                {
++                    var item = WorkspaceRecordService.CreateFamilyUpdate(Guid.NewGuid(), DateTime.Now, role, updateTitle.Text, updateText.Text);
++                    WorkspaceRecordService.SaveFamilyUpdate(Session.Store ?? throw new InvalidOperationException("Log eerst in."), item);
++                    Ui.Info("Concept bewaard. Er is niets verstuurd.");
++                    RenderWorkspace();
++                }
++                catch (Exception ex) when (ex is ArgumentException or InvalidOperationException) { Ui.Info(ex.Message); }
++            }, soft: true));
++            if (Session.Store is { } parentStore)
++            {
++                foreach (var draft in WorkspaceRecordService.GetFamilyUpdates(parentStore).Take(10))
++                {
++                    var localDraft = draft;
++                    _content.Children.Add(Ui.Card(new StackPanel
++                    {
++                        Children = { Ui.Label($"Concept · {localDraft.Created:dd-MM-yyyy HH:mm}", muted: true), Ui.Label(localDraft.Title, title: true), Ui.Label(localDraft.Message), Ui.Btn("🗑️ Concept verwijderen", () => { if (Ui.Confirm("Dit concept definitief verwijderen?")) { Session.Store?.Delete("familyupdate", localDraft.Id); RenderWorkspace(); } }, soft: true) }
++                    }));
++                }
++            }
++        }
++
++        _content.Children.Add(Ui.Label("Bewaarde notities", title: true));
++        var store = Session.Store;
++        var notes = store is null ? Array.Empty<WorkspaceNote>() : WorkspaceRecordService.GetNotes(store, role).Take(20).ToArray();
++        if (notes.Length == 0) _content.Children.Add(Ui.Label("Nog geen notities."));
++        foreach (var note in notes)
++        {
++            var copy = note;
++            _content.Children.Add(Ui.Card(new StackPanel
++            {
++                Children = { Ui.Label($"{copy.Category} · {copy.Created:dd-MM-yyyy HH:mm}", muted: true), Ui.Label(copy.Title, title: true), Ui.Label(copy.Text), Ui.Btn("🗑️ Verwijderen", () => { if (Ui.Confirm("Deze notitie definitief verwijderen?")) { Session.Store?.Delete("workspacenote", copy.Id); RenderWorkspace(); } }, soft: true) }
++            }));
++        }
++
++        _content.Children.Add(Ui.Label("Taken", title: true));
++        var tasks = store is null ? Array.Empty<WorkspaceTask>() : WorkspaceRecordService.GetTasks(store, role).Take(20).ToArray();
++        if (tasks.Length == 0) _content.Children.Add(Ui.Label("Nog geen taken."));
++        foreach (var task in tasks)
++        {
++            var copy = task;
++            _content.Children.Add(Ui.Card(new StackPanel
++            {
++                Children = { Ui.Label((copy.Completed ? "✅ " : "⬜ ") + copy.Title, title: true), Ui.Label(copy.Details), Ui.Btn(copy.Completed ? "↩️ Weer open" : "✅ Afvinken", () => { if (Session.Store is { } s) WorkspaceRecordService.CompleteTask(s, copy, !copy.Completed); RenderWorkspace(); }, soft: true), Ui.Btn("🗑️ Verwijderen", () => { if (Ui.Confirm("Deze taak definitief verwijderen?")) { Session.Store?.Delete("workspacetask", copy.Id); RenderWorkspace(); } }, soft: true) }
++            }));
++        }
++        _content.Children.Add(Ui.Label("Privacy: deze ruimte werkt op dit apparaat binnen het account dat is ingelogd. Er is geen automatische synchronisatie. Deel persoonlijke informatie alleen bewust, via de bestaande deelpakketfunctie.", muted: true));
++    }
++
++    void SaveNote(string role)
++    {
++        try
++        {
++            var note = WorkspaceRecordService.CreateNote(Guid.NewGuid(), DateTime.Now, role, _category.SelectedItem?.ToString(), _noteTitle.Text, _noteText.Text);
++            WorkspaceRecordService.SaveNote(Session.Store ?? throw new InvalidOperationException("Log eerst in."), note);
++            Session.Settings.WorkspaceRole = role; Session.SaveSettings();
++            RenderWorkspace();
++        }
++        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException) { Ui.Info(ex.Message); }
++    }
++
++    void SaveTask(string role)
++    {
++        try
++        {
++            var task = WorkspaceRecordService.CreateTask(Guid.NewGuid(), DateTime.Now, null, role, _taskTitle.Text, _taskText.Text);
++            WorkspaceRecordService.SaveTask(Session.Store ?? throw new InvalidOperationException("Log eerst in."), task);
++            Session.Settings.WorkspaceRole = role; Session.SaveSettings();
++            RenderWorkspace();
++        }
++        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException) { Ui.Info(ex.Message); }
++    }
++}
