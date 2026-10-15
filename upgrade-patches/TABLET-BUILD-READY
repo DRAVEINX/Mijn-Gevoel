@@ -5,3 +5,5 @@ Retry after filtering the tablet-incompatible 3.1.0 project-version hunk.
 Retry after filtering tablet-specific version hunks from 3.1 and 3.2 patches.
 
 Rebuild tablet after optional-hunk and checksum corrections.
+
+Retry after platform-specific project metadata patch fix.
