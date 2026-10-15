@@ -589,10 +589,11 @@ jobs:
           IOS_CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
           IOS_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
           IOS_CODESIGN_KEY: ${{ secrets.IOS_CODESIGN_KEY }}
+          IOS_CODESIGN_PROVISION: ${{ secrets.IOS_CODESIGN_PROVISION }}
           IOS_TEAM_ID: ${{ secrets.IOS_TEAM_ID }}
         run: |
           missing=()
-          for name in IOS_CERTIFICATE_P12_BASE64 IOS_CERTIFICATE_PASSWORD IOS_PROVISIONING_PROFILE_BASE64 IOS_CODESIGN_KEY IOS_TEAM_ID; do
+          for name in IOS_CERTIFICATE_P12_BASE64 IOS_CERTIFICATE_PASSWORD IOS_PROVISIONING_PROFILE_BASE64 IOS_CODESIGN_KEY IOS_CODESIGN_PROVISION IOS_TEAM_ID; do
             if [[ -z "${!name}" ]]; then missing+=("$name"); fi
           done
           if (( ${#missing[@]} )); then
@@ -672,11 +673,12 @@ jobs:
         shell: bash
         env:
           IOS_CODESIGN_KEY: ${{ secrets.IOS_CODESIGN_KEY }}
+          IOS_CODESIGN_PROVISION: ${{ secrets.IOS_CODESIGN_PROVISION }}
           IOS_TEAM_ID: ${{ secrets.IOS_TEAM_ID }}
         run: |
           set -euo pipefail
           cd source/MijnGevoel-Android/MijnGevoel.Android
-          dotnet publish MoodPress.iOS.csproj --configuration Release --framework net10.0-ios --runtime ios-arm64 -p:ArchiveOnBuild=true -p:EnableCodeSigning=true -p:CodesignKey="$IOS_CODESIGN_KEY" -p:CodesignProvision="$IOS_TEAM_ID" -p:ApplicationDisplayVersion=3.3.0 -p:ApplicationVersion=38
+          dotnet publish MoodPress.iOS.csproj --configuration Release --framework net10.0-ios --runtime ios-arm64 -p:ArchiveOnBuild=true -p:EnableCodeSigning=true -p:CodesignKey="$IOS_CODESIGN_KEY" -p:CodesignProvision="$IOS_CODESIGN_PROVISION" -p:CodesignTeamId="$IOS_TEAM_ID" -p:ApplicationDisplayVersion=3.3.0 -p:ApplicationVersion=38
           mkdir -p ../../../artifacts/ios-device
           IPA="$(find bin/Release/net10.0-ios -type f -name '*.ipa' -print -quit)"
           if [[ -z "$IPA" ]]; then
