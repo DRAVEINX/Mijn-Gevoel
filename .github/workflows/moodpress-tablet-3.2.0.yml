@@ -115,7 +115,21 @@ jobs:
           target='--- a/MijnGevoel-Android/MijnGevoel.Android/MijnGevoel.Android.csproj'
           p.write_text(''.join(section for section in sections if not section.startswith(target)),encoding='utf-8')
           PY
-          (cd source && patch --batch --forward --exclude='MijnGevoel.Android.csproj' -p1 < /tmp/moodpress-windows-3.3.0.patch)
+                    python3 - <<'PY'
+          from pathlib import Path
+          import re
+          p=Path('/tmp/moodpress-windows-3.3.0.patch')
+          data=p.read_text(encoding='utf-8')
+          if re.search(r'^diff --git ', data, re.M):
+              sections=re.split(r'(?=^diff --git )', data, flags=re.M)
+              filtered=[section for section in sections if 'MijnGevoel-Android/MijnGevoel.Android/MijnGevoel.Android.csproj' not in section.splitlines()[0]]
+          else:
+              sections=re.split(r'(?=^--- a/)', data, flags=re.M)
+              filtered=[section for section in sections if not section.startswith('--- a/MijnGevoel-Android/MijnGevoel.Android/MijnGevoel.Android.csproj')]
+          if not filtered: raise SystemExit('Windows patch filtering removed all changes')
+          p.write_text(''.join(filtered),encoding='utf-8')
+          PY
+          (cd source && patch --batch --forward -p1 < /tmp/moodpress-windows-3.3.0.patch)
 
       - name: Set tablet package identity and validate features
         shell: bash
