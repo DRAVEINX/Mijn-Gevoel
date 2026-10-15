@@ -110,6 +110,8 @@ jobs:
           (cd source && patch --batch --forward -p1 < ../upgrade-patches/12-accessibility-quick-help.patch)
           test -f upgrade-patches/13-multiple-feelings.patch
           (cd source && patch --batch --forward -p1 < ../upgrade-patches/13-multiple-feelings.patch)
+          test -f upgrade-patches/14-compose-communication.patch
+          (cd source && patch --batch --forward -p1 < ../upgrade-patches/14-compose-communication.patch)
 
           test -f source/MijnGevoel-Android/MijnGevoel.Android/SpeechOutput.cs
           test -f source/MijnGevoel-Android/MijnGevoel.Desktop/DesktopSpeechInput.cs
