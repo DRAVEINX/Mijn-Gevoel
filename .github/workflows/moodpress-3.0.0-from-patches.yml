@@ -75,6 +75,9 @@ jobs:
           gzip --decompress --stdout /tmp/moodpress-3.2.0.patch.gz > /tmp/moodpress-3.2.0.patch
           (cd source && patch --batch --forward -p1 < /tmp/moodpress-3.2.0.patch)
 
+          test -f upgrade-patches/09-fix-tts-cancellation.patch
+          (cd source && patch --batch --forward -p1 < ../upgrade-patches/09-fix-tts-cancellation.patch)
+
           test -f source/MijnGevoel-Android/MijnGevoel.Android/SpeechOutput.cs
           test -f source/MijnGevoel-Android/RELEASE-NOTES-3.2.0.md
           test -f source/MijnGevoel-Android/docs/quality/VOICE-ACCESSIBILITY-3.2.0.md
