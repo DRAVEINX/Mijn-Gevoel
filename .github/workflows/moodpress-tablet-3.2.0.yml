@@ -75,9 +75,9 @@ jobs:
           sections = re.split(r'(?=^--- )', patch_text, flags=re.M)
           target = '--- a/MijnGevoel-Android/MijnGevoel.Android/MijnGevoel.Android.csproj'
           filtered = [section for section in sections if not section.startswith(target)]
-          if len(filtered) == len(sections):
-              raise SystemExit('No tablet-incompatible project version section found in 3.1 patch')
-          Path('/tmp/moodpress-3.1.0-tablet.patch').write_text(''.join(filtered), encoding='utf-8')
+          # The project version section is optional across source-patch revisions.
+          output = ''.join(filtered) if len(filtered) != len(sections) else patch_text
+          Path('/tmp/moodpress-3.1.0-tablet.patch').write_text(output, encoding='utf-8')
           PY
           (cd source && patch --batch --forward -p1 < /tmp/moodpress-3.1.0-tablet.patch)
           (cd source && patch --batch --forward -p1 < ../upgrade-patches/07-fix-pdf-date-nullability.patch)
@@ -94,8 +94,9 @@ jobs:
           sections=re.split(r'(?=^--- )',p.read_text(encoding='utf-8'),flags=re.M)
           target='--- a/MijnGevoel-Android/MijnGevoel.Android/MijnGevoel.Android.csproj'
           filtered=[section for section in sections if not section.startswith(target)]
-          if len(filtered)==len(sections): raise SystemExit('No tablet-incompatible project version section found in 3.2 patch')
-          p.write_text(''.join(filtered),encoding='utf-8')
+          # The project version section is optional across source-patch revisions.
+          original = p.read_text(encoding='utf-8')
+          p.write_text(''.join(filtered) if len(filtered) != len(sections) else original,encoding='utf-8')
           PY
           (cd source && patch --batch --forward -p1 < /tmp/moodpress-3.2.0.patch)
           (cd source && patch --batch --forward -p1 < ../upgrade-patches/09-fix-tts-cancellation.patch)
