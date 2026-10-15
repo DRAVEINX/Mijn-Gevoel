@@ -285,11 +285,72 @@ jobs:
           New-Item -ItemType Directory -Path "$PWD/artifacts" -Force | Out-Null
           Compress-Archive -Path "$publish/*" -DestinationPath "$PWD/artifacts/MoodPress-Windows-3.3.0-portable.zip" -Force
 
-      - name: Upload Windows portable build
+      - name: Install WiX 5 for Windows MSI packaging
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $tool = dotnet tool list --global | Select-String '^\s*wix\s'
+          if ($tool) { dotnet tool update --global wix --version 5.0.2 }
+          else { dotnet tool install --global wix --version 5.0.2 }
+          if ($LASTEXITCODE -ne 0) { throw "WiX 5.0.2 install failed." }
+          "$env:USERPROFILE\.dotnet\tools" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+          wix extension add -g WixToolset.UI.wixext/5.0.2
+          if ($LASTEXITCODE -ne 0) { throw "WiX UI extension install failed." }
+
+      - name: Build and validate the full MoodPress MSI
+        working-directory: source/MijnGevoel-Android
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $publishDir = Join-Path $PWD "MijnGevoel.Desktop/bin/Release/net8.0-windows/win-x64/publish"
+          if (!(Test-Path (Join-Path $publishDir "MoodPress.exe"))) { throw "MoodPress.exe is missing from the self-contained publish folder." }
+          $wxsPath = Join-Path $PWD "installer/Package.wxs"
+          if (!(Test-Path $wxsPath)) { throw "installer/Package.wxs was not found." }
+          $wxs = Get-Content -LiteralPath $wxsPath -Raw
+          $wxs = $wxs.Replace('Name="Mijn Gevoel" Manufacturer="Mijn Gevoel" Version="1.0.8"', 'Name="MoodPress" Manufacturer="DRAVEINX" Version="3.3.0"')
+          $wxs = $wxs.Replace('<SummaryInformation Description="Mijn Gevoel - installatie" />', '<SummaryInformation Description="MoodPress - installatie" />')
+          $wxs = $wxs.Replace('<Feature Id="Main" Title="Mijn Gevoel"', '<Feature Id="Main" Title="MoodPress"')
+          $wxs = $wxs.Replace('Source="$(PublishDir)\MijnGevoel.exe"', 'Source="$(PublishDir)\MoodPress.exe"')
+          $wxs = $wxs.Replace('Name="Mijn Gevoel"', 'Name="MoodPress"')
+          if (-not $wxs.Contains('<Files Include="$(PublishDir)\**"')) {
+            $componentGroupEnd = '    </ComponentGroup>'
+            $filesElement = '      <Files Include="$(PublishDir)\**" Exclude="$(PublishDir)\MoodPress.exe" />' + [Environment]::NewLine + $componentGroupEnd
+            $wxs = $wxs.Replace($componentGroupEnd, $filesElement)
+          }
+          Set-Content -LiteralPath $wxsPath -Value $wxs -Encoding utf8
+          $required = @(
+            $wxsPath,
+            (Join-Path $PWD "installer/Voorwaarden.rtf"),
+            (Join-Path $PWD "installer/banner.bmp"),
+            (Join-Path $PWD "installer/dialoog.bmp"),
+            (Join-Path $PWD "MijnGevoel.Desktop/Assets/MijnGevoel.ico"),
+            (Join-Path $publishDir "MoodPress.exe")
+          )
+          foreach ($item in $required) { if (!(Test-Path $item)) { throw "Required MSI file missing: $item" } }
+          $msi = Join-Path $PWD "artifacts/MoodPress-Windows-3.3.0-Setup.msi"
+          New-Item -ItemType Directory -Path (Split-Path $msi) -Force | Out-Null
+          wix build $wxsPath -ext WixToolset.UI.wixext -culture nl-NL -arch x64 -d "PublishDir=$publishDir" -o $msi
+          if ($LASTEXITCODE -ne 0) { throw "WiX could not build the MSI." }
+          if (!(Test-Path $msi)) { throw "MSI output was not created." }
+          $publishedFiles = @(Get-ChildItem -LiteralPath $publishDir -Recurse -File)
+          if ($publishedFiles.Count -lt 1) { throw "The published app is empty." }
+          $windowsInstaller = New-Object -ComObject WindowsInstaller.Installer
+          $database = $windowsInstaller.OpenDatabase($msi, 0)
+          $view = $database.OpenView('SELECT * FROM File')
+          $view.Execute()
+          $msiFileCount = 0
+          while ($null -ne $view.Fetch()) { $msiFileCount++ }
+          $view.Close()
+          if ($msiFileCount -lt 1) { throw "The MSI has no installed file records." }
+          Write-Host "Validated MSI with $msiFileCount file records from a $($publishedFiles.Count)-file publish folder."
+          $hash = (Get-FileHash -LiteralPath $msi -Algorithm SHA256).Hash.ToLower()
+          "$hash  MoodPress-Windows-3.3.0-Setup.msi" | Set-Content (Join-Path (Split-Path $msi) "SHA256SUMS.txt") -Encoding utf8
+
+      - name: Upload Windows portable build and MSI installer
         uses: actions/upload-artifact@v4
         with:
-          name: MoodPress-Windows-3.3.0-portable
-          path: source/MijnGevoel-Android/artifacts/MoodPress-Windows-3.3.0-portable.zip
+          name: MoodPress-Windows-3.3.0-builds
+          path: source/MijnGevoel-Android/artifacts/*
           if-no-files-found: error
           retention-days: 14
 
