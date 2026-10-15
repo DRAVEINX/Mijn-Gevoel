@@ -1,1 +1,3 @@
 Rebuild MoodPress 3.2.0 after APK validation and artifact selection fix.
+
+Retry Android release build after patch integrity fixes.
