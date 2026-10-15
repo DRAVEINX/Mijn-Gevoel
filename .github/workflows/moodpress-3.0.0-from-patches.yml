@@ -1,4 +1,4 @@
-name: MoodPress 3.2.0 - apply patches, test, Android APK
+name: MoodPress 3.3.0 - all platforms, complete accessibility and workspaces
 on:
   workflow_dispatch:
   push:
@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: moodpress-3.2.0-upgrade
+  group: moodpress-3.3.0-upgrade
   cancel-in-progress: false
 
 jobs:
@@ -78,9 +78,19 @@ jobs:
           test -f upgrade-patches/09-fix-tts-cancellation.patch
           (cd source && patch --batch --forward -p1 < ../upgrade-patches/09-fix-tts-cancellation.patch)
 
+          # 3.3.0 closes Windows voice parity: explicit Dutch dictation and encrypted voice-note capture/playback.
+          test "$(find upgrade-patches -maxdepth 1 -type f -name '11-windows-voice-part-*.b64' | wc -l)" -eq 3
+          cat upgrade-patches/11-windows-voice-part-*.b64 > /tmp/moodpress-windows-3.3.0.patch.gz.b64
+          base64 --decode /tmp/moodpress-windows-3.3.0.patch.gz.b64 > /tmp/moodpress-windows-3.3.0.patch.gz
+          echo 'd17152d4882cefca9771a78ca1b47e2c636094c8f756c6c56a1667b3bf72e1a8  /tmp/moodpress-windows-3.3.0.patch.gz' | sha256sum -c -
+          gzip --decompress --stdout /tmp/moodpress-windows-3.3.0.patch.gz > /tmp/moodpress-windows-3.3.0.patch
+          (cd source && patch --batch --forward -p1 < /tmp/moodpress-windows-3.3.0.patch)
+
           test -f source/MijnGevoel-Android/MijnGevoel.Android/SpeechOutput.cs
+          test -f source/MijnGevoel-Android/MijnGevoel.Desktop/DesktopSpeechInput.cs
           test -f source/MijnGevoel-Android/RELEASE-NOTES-3.2.0.md
-          test -f source/MijnGevoel-Android/docs/quality/VOICE-ACCESSIBILITY-3.2.0.md
+          test -f source/MijnGevoel-Android/RELEASE-NOTES-3.3.0.md
+          test -f source/MijnGevoel-Android/docs/quality/VOICE-ACCESSIBILITY-3.3.0.md
           test -f source/MijnGevoel-Android/MijnGevoel.Core/Data/WorkspaceReportService.cs
           test -f source/MijnGevoel-Android/MijnGevoel.Tests/WorkspaceReportServiceTests.cs
           test -f source/MijnGevoel-Android/RELEASE-NOTES-3.1.0.md
@@ -99,7 +109,7 @@ jobs:
               values=[e.text or '' for e in tree.iter(name)]
               return values[-1] if values else None
           actual=(prop('TargetFramework'),prop('ApplicationId'),prop('ApplicationTitle'),prop('ApplicationDisplayVersion'),prop('ApplicationVersion'))
-          expected=('net10.0-android','nl.mijngevoel.app','MoodPress','3.2.0','37')
+          expected=('net10.0-android','nl.mijngevoel.app','MoodPress','3.3.0','38')
           if actual != expected: raise SystemExit(f'Versieconfiguratie: gevonden {actual}, verwacht {expected}')
           dashboard=(root/'MijnGevoel.Android/DashboardPage.cs').read_text(encoding='utf-8')
           match=re.search(r'public enum FeatureKind\s*\{([^}]+)\}',dashboard,re.S)
@@ -115,22 +125,23 @@ jobs:
           for name in ['WorkspaceRoleService.cs','WorkspaceRecordService.cs','WorkspaceModels.cs','WorkspaceReportService.cs']:
               if not (root/'MijnGevoel.Core/Data'/name).is_file(): raise SystemExit(f'Ontbreekt: {name}')
           for name in ['WorkspacePage.cs','SpeechInput.cs','SpeechOutput.cs']:
+              if not (root/'MijnGevoel.Desktop/DesktopSpeechInput.cs').is_file(): raise SystemExit('Ontbreekt: DesktopSpeechInput.cs')
               if not (root/'MijnGevoel.Android'/name).is_file(): raise SystemExit(f'Ontbreekt: {name}')
-          for p in ['MijnGevoel.Tests/WorkspaceReportServiceTests.cs','RELEASE-NOTES-3.1.0.md','docs/quality/WORKSPACES-3.1.0.md','RELEASE-NOTES-3.2.0.md','docs/quality/VOICE-ACCESSIBILITY-3.2.0.md']:
+          for p in ['MijnGevoel.Tests/WorkspaceReportServiceTests.cs','RELEASE-NOTES-3.1.0.md','docs/quality/WORKSPACES-3.1.0.md','RELEASE-NOTES-3.2.0.md','docs/quality/VOICE-ACCESSIBILITY-3.2.0.md','RELEASE-NOTES-3.3.0.md','docs/quality/VOICE-ACCESSIBILITY-3.3.0.md']:
               if not (root/p).is_file(): raise SystemExit(f'Ontbreekt: {p}')
           report_ui=(root/'MijnGevoel.Android/WorkspacePage.cs').read_text(encoding='utf-8')
           if 'var reportStart = (startDate.Date ??' not in report_ui or 'endDate.Date.Date' in report_ui:
               raise SystemExit('Nullable datumcontrole voor PDF rapport is niet correct.')
           print(f'Statische controles geslaagd voor MoodPress {actual[3]} met {len(entries)} features.')
           PY
-          (cd source && zip -qr -X ../MoodPress-Android-compleet-3.2.0.zip MijnGevoel-Android)
-          unzip -t MoodPress-Android-compleet-3.2.0.zip
+          (cd source && zip -qr -X ../MoodPress-Android-compleet-3.3.0.zip MijnGevoel-Android)
+          unzip -t MoodPress-Android-compleet-3.3.0.zip
 
       - name: Upload de bijgewerkte broncode, ook als een volgende stap faalt
         uses: actions/upload-artifact@v4
         with:
-          name: MoodPress-Android-compleet-3.2.0-source
-          path: MoodPress-Android-compleet-3.2.0.zip
+          name: MoodPress-Android-compleet-3.3.0-source
+          path: MoodPress-Android-compleet-3.3.0.zip
           if-no-files-found: error
           retention-days: 14
 
@@ -173,7 +184,7 @@ jobs:
           phone_apk="$(find "$output" -type f -iname '*app.debug*apk' -printf '%T@ %p\n' | sort -nr | head -n 1 | cut -d' ' -f2-)"
           test -n "$phone_apk" && test -f "$phone_apk"
           mkdir -p artifacts
-          cp "$phone_apk" artifacts/MoodPress-Android-Telefoon-3.2.0-debug.apk
+          cp "$phone_apk" artifacts/MoodPress-Android-Telefoon-3.3.0-debug.apk
 
       - name: Build Android tablet test APK
         working-directory: source/MijnGevoel-Android
@@ -189,20 +200,20 @@ jobs:
           output='MijnGevoel.Android/bin/Debug/net10.0-android'
           tablet_apk="$(find "$output" -type f -iname '*tablet.debug*apk' -printf '%T@ %p\n' | sort -nr | head -n 1 | cut -d' ' -f2-)"
           test -n "$tablet_apk" && test -f "$tablet_apk"
-          cp "$tablet_apk" artifacts/MoodPress-Android-Tablet-3.2.0-debug.apk
+          cp "$tablet_apk" artifacts/MoodPress-Android-Tablet-3.3.0-debug.apk
 
       - name: Validate phone APK, tablet APK and generate checksums
         shell: bash
         run: |
           set -euo pipefail
-          test -s artifacts/MoodPress-Android-Telefoon-3.2.0-debug.apk
-          test -s artifacts/MoodPress-Android-Tablet-3.2.0-debug.apk
+          test -s artifacts/MoodPress-Android-Telefoon-3.3.0-debug.apk
+          test -s artifacts/MoodPress-Android-Tablet-3.3.0-debug.apk
           python3 - <<'PY'
           from pathlib import Path
           from zipfile import ZipFile
           names = [
-              "MoodPress-Android-Telefoon-3.2.0-debug.apk",
-              "MoodPress-Android-Tablet-3.2.0-debug.apk",
+              "MoodPress-Android-Telefoon-3.3.0-debug.apk",
+              "MoodPress-Android-Tablet-3.3.0-debug.apk",
           ]
           for name in names:
               path = Path("artifacts") / name
@@ -217,13 +228,13 @@ jobs:
                   raise SystemExit(f"APK-validatie mislukt voor {name}: {exc}") from exc
               print(f"APK-validatie geslaagd: {name}")
           PY
-          cp MoodPress-Android-compleet-3.2.0.zip artifacts/
-          (cd artifacts && sha256sum MoodPress-Android-Telefoon-3.2.0-debug.apk MoodPress-Android-Tablet-3.2.0-debug.apk MoodPress-Android-compleet-3.2.0.zip > SHA256SUMS.txt)
+          cp MoodPress-Android-compleet-3.3.0.zip artifacts/
+          (cd artifacts && sha256sum MoodPress-Android-Telefoon-3.3.0-debug.apk MoodPress-Android-Tablet-3.3.0-debug.apk MoodPress-Android-compleet-3.3.0.zip > SHA256SUMS.txt)
 
       - name: Upload phone and tablet test APKs and checksums
         uses: actions/upload-artifact@v4
         with:
-          name: MoodPress-Android-Phone-Tablet-3.2.0-test-apks
+          name: MoodPress-Android-Phone-Tablet-3.3.0-test-apks
           path: artifacts/
           if-no-files-found: error
           retention-days: 14
@@ -233,16 +244,16 @@ jobs:
     needs: upgrade-and-build
     runs-on: windows-latest
     steps:
-      - name: Download the same validated 3.2.0 source archive
+      - name: Download the same validated 3.3.0 source archive
         uses: actions/download-artifact@v4
         with:
-          name: MoodPress-Android-compleet-3.2.0-source
+          name: MoodPress-Android-compleet-3.3.0-source
           path: incoming
 
       - name: Unpack the validated source archive
         shell: pwsh
         run: |
-          $archive = Join-Path $PWD "incoming/MoodPress-Android-compleet-3.2.0.zip"
+          $archive = Join-Path $PWD "incoming/MoodPress-Android-compleet-3.3.0.zip"
           if (!(Test-Path $archive)) { throw "Validated source archive is missing: $archive" }
           Expand-Archive -LiteralPath $archive -DestinationPath "$PWD/source" -Force
           if (!(Test-Path "$PWD/source/MijnGevoel-Android/MijnGevoel.Desktop/MijnGevoel.Desktop.csproj")) { throw "Desktop project not found." }
@@ -272,13 +283,13 @@ jobs:
           $publish = "MijnGevoel.Desktop/bin/Release/net8.0-windows/win-x64/publish"
           if (!(Test-Path "$publish/MoodPress.exe")) { throw "Expected MoodPress.exe was not created." }
           New-Item -ItemType Directory -Path "$PWD/artifacts" -Force | Out-Null
-          Compress-Archive -Path "$publish/*" -DestinationPath "$PWD/artifacts/MoodPress-Windows-3.2.0-portable.zip" -Force
+          Compress-Archive -Path "$publish/*" -DestinationPath "$PWD/artifacts/MoodPress-Windows-3.3.0-portable.zip" -Force
 
       - name: Upload Windows portable build
         uses: actions/upload-artifact@v4
         with:
-          name: MoodPress-Windows-3.2.0-portable
-          path: source/MijnGevoel-Android/artifacts/MoodPress-Windows-3.2.0-portable.zip
+          name: MoodPress-Windows-3.3.0-portable
+          path: source/MijnGevoel-Android/artifacts/MoodPress-Windows-3.3.0-portable.zip
           if-no-files-found: error
           retention-days: 14
 
@@ -291,17 +302,17 @@ jobs:
       - name: Check out current feature branch
         uses: actions/checkout@v4
 
-      - name: Download validated shared 3.2.0 source
+      - name: Download validated shared 3.3.0 source
         uses: actions/download-artifact@v4
         with:
-          name: MoodPress-Android-compleet-3.2.0-source
+          name: MoodPress-Android-compleet-3.3.0-source
           path: incoming
 
       - name: Apply the iOS platform port to the same shared source
         shell: bash
         run: |
           set -euo pipefail
-          archive='incoming/MoodPress-Android-compleet-3.2.0.zip'
+          archive='incoming/MoodPress-Android-compleet-3.3.0.zip'
           test -f "$archive"
           unzip -t "$archive"
           mkdir -p source artifacts/ios
@@ -314,12 +325,28 @@ jobs:
           (cd source && patch --batch --forward -p1 < /tmp/moodpress-ios-3.2.0.patch)
           project='source/MijnGevoel-Android/MijnGevoel.Android/MoodPress.iOS.csproj'
           test -f "$project"
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          p=Path('source/MijnGevoel-Android/MijnGevoel.Android/MoodPress.iOS.csproj')
+          s=p.read_text(encoding='utf-8')
+          for tag, value in [('ApplicationDisplayVersion','3.3.0'),('ApplicationVersion','38')]:
+              s,n=re.subn(rf'<{tag}>.*?</{tag}>',f'<{tag}>{value}</{tag}>',s,count=1,flags=re.S)
+              if n!=1: raise SystemExit(f'Could not update iOS property {tag}')
+          p.write_text(s,encoding='utf-8')
+          quality=Path('source/MijnGevoel-Android/docs/quality')
+          for old_name,new_name in [('IOS-STATUS-3.2.0.md','IOS-STATUS-3.3.0.md'),('VALIDATIERAPPORT-3.2.0.md','VALIDATIERAPPORT-3.3.0.md')]:
+              old=quality/old_name
+              if old.exists():
+                  data=old.read_text(encoding='utf-8').replace('3.2.0','3.3.0')
+                  (quality/new_name).write_text(data,encoding='utf-8')
+          PY
           grep -q '<TargetFramework>net10.0-ios</TargetFramework>' "$project"
-          grep -q '<ApplicationDisplayVersion>3.2.0</ApplicationDisplayVersion>' "$project"
-          grep -q '<ApplicationVersion>37</ApplicationVersion>' "$project"
+          grep -q '<ApplicationDisplayVersion>3.3.0</ApplicationDisplayVersion>' "$project"
+          grep -q '<ApplicationVersion>38</ApplicationVersion>' "$project"
           grep -q 'NSSpeechRecognitionUsageDescription' source/MijnGevoel-Android/MijnGevoel.Android/Platforms/iOS/Info.plist
           grep -q 'NSFaceIDUsageDescription' source/MijnGevoel-Android/MijnGevoel.Android/Platforms/iOS/Info.plist
-          echo 'Shared 3.2.0 source and iOS platform adapters validated.'
+          echo 'Shared 3.3.0 source and iOS platform adapters validated.'
 
       - name: Set up .NET SDKs
         uses: actions/setup-dotnet@v4
@@ -358,14 +385,14 @@ jobs:
             -p:EnableCodeSigning=false
           APP_PATH="$(find bin-ios/Debug/net10.0-ios -type d -name '*.app' -print -quit)"
           test -n "$APP_PATH" || { echo 'No iOS Simulator .app bundle was produced.' >&2; find bin-ios/Debug -maxdepth 7 -print; exit 1; }
-          ditto "$APP_PATH" ../../../artifacts/ios/MoodPress-iOS-3.2.0-Simulator.app
-          ditto -c -k --sequesterRsrc --keepParent ../../../artifacts/ios/MoodPress-iOS-3.2.0-Simulator.app ../../../artifacts/ios/MoodPress-iOS-3.2.0-Simulator.zip
-          shasum -a 256 ../../../artifacts/ios/MoodPress-iOS-3.2.0-Simulator.zip | tee ../../../artifacts/ios/SHA256SUMS.txt
+          ditto "$APP_PATH" ../../../artifacts/ios/MoodPress-iOS-3.3.0-Simulator.app
+          ditto -c -k --sequesterRsrc --keepParent ../../../artifacts/ios/MoodPress-iOS-3.3.0-Simulator.app ../../../artifacts/ios/MoodPress-iOS-3.3.0-Simulator.zip
+          shasum -a 256 ../../../artifacts/ios/MoodPress-iOS-3.3.0-Simulator.zip | tee ../../../artifacts/ios/SHA256SUMS.txt
 
       - name: Upload unsigned iOS Simulator build
         uses: actions/upload-artifact@v4
         with:
-          name: MoodPress-iOS-3.2.0-Simulator
+          name: MoodPress-iOS-3.3.0-Simulator
           path: artifacts/ios/*
           if-no-files-found: error
           retention-days: 14
