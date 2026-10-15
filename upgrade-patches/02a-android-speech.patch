@@ -1,0 +1,75 @@
+--- a/MijnGevoel-Android/MijnGevoel.Android/Platforms/Android/MainActivity.cs
++++ b/MijnGevoel-Android/MijnGevoel.Android/Platforms/Android/MainActivity.cs
+@@ -1,6 +1,7 @@
+ using Android.App;
+ using Android.Content.PM;
+ using Android.OS;
++using Android.Content;
+ 
+ namespace MijnGevoel.AndroidApp;
+ 
+@@ -9,4 +10,9 @@
+                            ConfigChanges.ScreenLayout | ConfigChanges.SmallestScreenSize | ConfigChanges.Density)]
+ public class MainActivity : MauiAppCompatActivity
+ {
++    protected override void OnActivityResult(int requestCode, Result resultCode, Intent? data)
++    {
++        SpeechInput.HandleActivityResult(requestCode, resultCode, data);
++        base.OnActivityResult(requestCode, resultCode, data);
++    }
+ }
+--- /dev/null
++++ b/MijnGevoel-Android/MijnGevoel.Android/SpeechInput.cs
+@@ -0,0 +1,52 @@
++using Android.App;
++using Android.Content;
++using Android.Speech;
++using Microsoft.Maui.ApplicationModel;
++
++namespace MijnGevoel.AndroidApp;
++
++/// <summary>Uses the device's speech-recognition activity to turn Dutch speech into editable text.</summary>
++public static class SpeechInput
++{
++    const int RequestCode = 47831;
++    static TaskCompletionSource<string?>? _pending;
++
++    public static async Task<string?> ListenAsync()
++    {
++        var activity = Platform.CurrentActivity ?? throw new InvalidOperationException("Spraakinvoer is nu niet beschikbaar.");
++        if (!SpeechRecognizer.IsRecognitionAvailable(activity))
++            throw new InvalidOperationException("Er is geen spraakherkenning beschikbaar op dit toestel. Je kunt ook typen of een spraakbericht opnemen.");
++
++        var tcs = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
++        if (Interlocked.CompareExchange(ref _pending, tcs, null) is not null)
++            throw new InvalidOperationException("Er is al een spraakinvoer actief.");
++
++        try
++        {
++            var intent = new Intent(RecognizerIntent.ActionRecognizeSpeech);
++            intent.PutExtra(RecognizerIntent.ExtraLanguageModel, RecognizerIntent.LanguageModelFreeForm);
++            intent.PutExtra(RecognizerIntent.ExtraLanguage, "nl-NL");
++            intent.PutExtra(RecognizerIntent.ExtraPrompt, "Spreek rustig. Je kunt de herkende tekst daarna aanpassen.");
++            intent.PutExtra(RecognizerIntent.ExtraMaxResults, 1);
++            activity.StartActivityForResult(intent, RequestCode);
++        }
++        catch (Exception ex)
++        {
++            Interlocked.CompareExchange(ref _pending, null, tcs);
++            if (ex is ActivityNotFoundException) throw new InvalidOperationException("De spraakherkenning kan niet worden geopend. Je kunt typen of een geluidsopname maken.", ex);
++            throw;
++        }
+
+        return await tcs.Task;
+    }
+
+    public static void HandleActivityResult(int requestCode, Result resultCode, Intent? data)
+    {
+        if (requestCode != RequestCode) return;
+        var tcs = Interlocked.Exchange(ref _pending, null);
+        if (tcs is null) return;
+        if (resultCode != Result.Ok) { tcs.TrySetResult(null); return; }
+        var matches = data?.GetStringArrayListExtra(RecognizerIntent.ExtraResults);
+        tcs.TrySetResult(matches?.FirstOrDefault(x => !string.IsNullOrWhiteSpace(x)));
+    }
+}
