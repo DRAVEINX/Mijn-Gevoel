@@ -1,0 +1,6 @@
+e5754d543e9358be0ed9525e51cd0f8e269934660465810c4abf645fff786b27  MoodPress-Android-compleet-2.5.2.zip
+a381076853080a577a6b03492485ca51e12674738f04c98f1c7f21576e35f2ff  MoodPress-Android-Tablet-2.5.2.zip
+487765a1a156bc6df9718787a7feec04d372c7e8164bd009265fa7e7fb3334a1  .github/workflows/android-apk-2.5.2.yml
+87d4d797c9ae6e871622b1a37ee2d4132bace5fbc4a49818729d459dd3df0c66  .github/workflows/android-release-2.5.2.yml
+69d5a0af5aa9aa24d19bccbd4f509dbbb94301e25abbe6df721869fb47f8b651  .github/workflows/android-tablet-apk-2.5.2.yml
+84a848a03c2b7e1771831f8370c062596071efe96b93d6654dcde0146ef119e6  .github/workflows/android-tablet-release-2.5.2.yml
