@@ -166,6 +166,15 @@ diff -ruN moodpress_base_flat/MijnGevoel.Android/DashboardPage.cs moodpress4_bui
          if (columns == _shortcutColumns || AppSession.Store is null) return;
          _shortcutColumns = columns;
          Build();
+@@ -520,6 +520,7 @@
+     protected override async void OnAppearing()
+     {
+         base.OnAppearing();
+         if (AppSession.Store is not null) Build();
+         AppSession.Touch();
++        if (AppSession.Store is not null) _ = CloudSyncClient.TryAutoSyncAsync();
+         if (AppSession.Settings.Animations) { Opacity = 0; _ = this.FadeToAsync(1, 180, Easing.CubicOut); }
+
 diff -ruN moodpress_base_flat/MijnGevoel.Android/FeatureCatalog.cs moodpress4_build/MijnGevoel.Android/FeatureCatalog.cs
 --- moodpress_base_flat/MijnGevoel.Android/FeatureCatalog.cs	2026-10-15 06:30:40.000000000 +0000
 +++ moodpress4_build/MijnGevoel.Android/FeatureCatalog.cs	2026-10-16 10:44:31.000000000 +0000
@@ -790,6 +799,7 @@ diff -ruN moodpress_base_flat/MijnGevoel.Android/FeaturePage.MoodPress40.cs mood
 +
 +    void BuildSecureSync()
 +    {
++        BuildCloudSyncPanel();
 +        Header("Veilig overzetten tussen apparaten", "Verplaats gegevens tussen je eigen telefoon en tablet met een apart wachtwoord-beveiligd bestand. Er is geen live cloudverbinding: jij kiest wanneer je exporteert en importeert.");
 +        var password = AppUi.Entry("Nieuw overdrachtwachtwoord (minimaal 10 tekens)", password: true);
 +        var confirm = AppUi.Entry("Wachtwoord herhalen", password: true);
@@ -3016,3 +3026,786 @@ diff -ruN moodpress_base_flat/scripts/check-moodpress-4.sh moodpress4_build/scri
 +grep -q 'actions/setup-java@v6' "$workflow"
 +grep -q 'actions/upload-artifact@v7' "$workflow"
 +echo "MoodPress warning-regression checks passed."
++test -f 'MijnGevoel.Android/CloudSyncClient.cs'
++test -f 'MijnGevoel.Android/CloudArchiveMerger.cs'
++test -f 'MijnGevoel.Android/FeaturePage.CloudSync.cs'
++grep -q 'BuildCloudSyncPanel' "$extra"
++grep -q 'TryAutoSyncAsync' 'MijnGevoel.Android/DashboardPage.cs'
++grep -q 'CloudArchiveMerger.CreateMergedArchive' 'MijnGevoel.Android/CloudSyncClient.cs'
++grep -q 'IsEncryptedRecordForCurrentKey' 'MijnGevoel.Android/CloudArchiveMerger.cs'
++echo "MoodPress cloud-sync integration checks passed."
+
+diff -ruN moodpress_base_flat/MijnGevoel.Android/CloudSyncClient.cs moodpress4_build/MijnGevoel.Android/CloudSyncClient.cs
+--- moodpress_base_flat/MijnGevoel.Android/CloudSyncClient.cs	1970-01-01 00:00:00.000000000 +0000
++++ moodpress4_build/MijnGevoel.Android/CloudSyncClient.cs	2026-10-16 14:00:00.000000000 +0000
+@@ -0,0 +1,379 @@
++using System.Net;
++using System.Net.Http.Headers;
++using System.Net.Http.Json;
++using System.Security.Cryptography;
++using System.Text.Json;
++using Microsoft.Maui.Devices;
++using Microsoft.Maui.Storage;
++using MijnGevoel.Core.Data;
++
++namespace MijnGevoel.AndroidApp;
++
++/// <summary>Client for encrypted cloud snapshots. Tokens and local baseline keys use platform SecureStorage.</summary>
++public static class CloudSyncClient
++{
++    const string EndpointKey = "moodpress.cloud.endpoint";
++    const string TokenKey = "moodpress.cloud.token";
++    const string WorkspaceKey = "moodpress.cloud.workspace";
++    const string AutoSyncKey = "moodpress.cloud.auto-sync";
++    const long MaxArchiveBytes = 100L * 1024 * 1024;
++    static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(120) };
++    static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
++    static readonly SemaphoreSlim SyncLock = new(1, 1);
++    static DateTime _lastAutoAttemptUtc = DateTime.MinValue;
++
++    public static bool AutoSyncEnabled
++    {
++        get => Preferences.Default.Get(AutoSyncKey, true);
++        set => Preferences.Default.Set(AutoSyncKey, value);
++    }
++
++    public static async Task<string> LoadEndpointAsync() => (await SecureStorage.Default.GetAsync(EndpointKey)) ?? "";
++    public static async Task<string> LoadEmailHintAsync() => (await SecureStorage.Default.GetAsync("moodpress.cloud.email")) ?? "";
++    public static async Task<bool> HasSessionAsync() => !string.IsNullOrWhiteSpace(await SecureStorage.Default.GetAsync(TokenKey));
++
++    public static async Task AuthenticateAsync(string endpoint, string email, string password, bool register,
++        string displayName, CancellationToken cancellationToken = default)
++    {
++        if (AppSession.Store is null) throw new InvalidOperationException("Ontgrendel eerst je MoodPress-account.");
++        var baseUrl = NormalizeEndpoint(endpoint);
++        if (string.IsNullOrWhiteSpace(email) || string.IsNullOrEmpty(password))
++            throw new InvalidOperationException("Vul je portal-e-mailadres en wachtwoord in.");
++        if (register && string.IsNullOrWhiteSpace(displayName))
++            throw new InvalidOperationException("Vul een naam in voor het nieuwe portalaccount.");
++
++        using var request = new HttpRequestMessage(HttpMethod.Post, baseUrl + (register ? "/api/v1/auth/register" : "/api/v1/auth/login"));
++        object payload = register
++            ? new { email = email.Trim(), displayName = displayName.Trim(), password }
++            : new { email = email.Trim(), password };
++        request.Content = JsonContent.Create(payload, options: Json);
++        using var response = await Http.SendAsync(request, cancellationToken);
++        var session = await ReadResponseAsync<SessionDto>(response, cancellationToken);
++        if (string.IsNullOrWhiteSpace(session.AccessToken)) throw new InvalidDataException("De portal gaf geen toegangstoken terug.");
++
++        try
++        {
++            var me = await SendApiAsync<MeDto>(baseUrl, session.AccessToken, null, HttpMethod.Get, "/api/v1/me", null, cancellationToken);
++            var owner = me.Workspaces.FirstOrDefault(w => string.Equals(w.Role, "owner", StringComparison.OrdinalIgnoreCase));
++            if (owner is null) throw new InvalidOperationException("Dit portalaccount heeft geen eigen werkruimte. Cloudsynchronisatie kan alleen vanuit je eigen werkruimte.");
++            await SecureStorage.Default.SetAsync(EndpointKey, baseUrl);
++            await SecureStorage.Default.SetAsync(TokenKey, session.AccessToken);
++            await SecureStorage.Default.SetAsync(WorkspaceKey, owner.Id);
++            await SecureStorage.Default.SetAsync("moodpress.cloud.email", session.User.Email);
++        }
++        catch
++        {
++            try
++            {
++                using var revoke = new HttpRequestMessage(HttpMethod.Post, baseUrl + "/api/v1/auth/logout");
++                revoke.Headers.Authorization = new AuthenticationHeaderValue("Bearer", session.AccessToken);
++                using var ignored = await Http.SendAsync(revoke, cancellationToken);
++            }
++            catch { }
++            throw;
++        }
++    }
++
++    public static async Task DisconnectAsync(CancellationToken cancellationToken = default)
++    {
++        var endpoint = await SecureStorage.Default.GetAsync(EndpointKey);
++        var token = await SecureStorage.Default.GetAsync(TokenKey);
++        if (!string.IsNullOrWhiteSpace(endpoint) && !string.IsNullOrWhiteSpace(token))
++        {
++            try
++            {
++                using var request = new HttpRequestMessage(HttpMethod.Post, endpoint.TrimEnd('/') + "/api/v1/auth/logout");
++                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
++                using var response = await Http.SendAsync(request, cancellationToken);
++            }
++            catch { /* Local credentials must still be cleared if the network is unavailable. */ }
++        }
++        SecureStorage.Default.Remove(TokenKey);
++        SecureStorage.Default.Remove(WorkspaceKey);
++        SecureStorage.Default.Remove(EndpointKey);
++        SecureStorage.Default.Remove("moodpress.cloud.email");
++    }
++
++    public static async Task<CloudSyncResult> SyncNowAsync(CancellationToken cancellationToken = default)
++    {
++        if (AppSession.Store is null || string.IsNullOrWhiteSpace(AppSession.Username))
++            throw new InvalidOperationException("Ontgrendel eerst je MoodPress-account.");
++        await SyncLock.WaitAsync(cancellationToken);
++        var temporary = new List<string>();
++        try
++        {
++            var endpoint = await SecureStorage.Default.GetAsync(EndpointKey);
++            var token = await SecureStorage.Default.GetAsync(TokenKey);
++            var workspace = await SecureStorage.Default.GetAsync(WorkspaceKey);
++            if (string.IsNullOrWhiteSpace(endpoint) || string.IsNullOrWhiteSpace(token) || string.IsNullOrWhiteSpace(workspace))
++                throw new InvalidOperationException("Koppel eerst je beveiligde MoodPress-cloudaccount in dit scherm.");
++
++            var vaultId = Path.GetFileNameWithoutExtension(AppSession.Accounts.AccountFilePath(AppSession.Username));
++            if (vaultId.Length != 64 || vaultId.Any(c => !Uri.IsHexDigit(c)))
++                throw new InvalidDataException("De lokale kluis-ID kan niet veilig worden vastgesteld.");
++
++            var localZip = NewTempPath("local");
++            var remoteZip = NewTempPath("remote");
++            var mergedZip = NewTempPath("merged");
++            temporary.Add(localZip); temporary.Add(remoteZip); temporary.Add(mergedZip);
++            await Task.Run(() => BackupService.Create(AppSession.Accounts, AppSession.Username, localZip), cancellationToken);
++            EnsureArchiveSize(localZip);
++
++            var remote = await TryGetSnapshotAsync(endpoint, token, workspace, cancellationToken);
++            if (remote is null)
++            {
++                var bytes = await File.ReadAllBytesAsync(localZip, cancellationToken);
++                try
++                {
++                    var digest = Convert.ToHexString(SHA256.HashData(bytes));
++                    var saved = await PutSnapshotAsync(endpoint, token, workspace, 0, vaultId, digest, bytes, cancellationToken);
++                    await SaveBaselineAsync(vaultId, localZip, cancellationToken);
++                    return new CloudSyncResult(true, "Eerste cloudsnapshot opgeslagen.", saved.Version, 0, true);
++                }
++                finally { CryptographicOperations.ZeroMemory(bytes); }
++            }
++
++            if (!string.Equals(remote.VaultId, vaultId, StringComparison.OrdinalIgnoreCase))
++                throw new InvalidDataException("Deze cloudwerkruimte is gekoppeld aan een andere lokale MoodPress-kluis. Er is niets aangepast.");
++
++            byte[] remoteBytes;
++            try { remoteBytes = Convert.FromBase64String(remote.EncryptedArchiveBase64); }
++            catch (FormatException) { throw new InvalidDataException("De cloudback-up heeft een ongeldig bestandsformaat."); }
++            try
++            {
++                if (remoteBytes.LongLength > MaxArchiveBytes) throw new InvalidDataException("De cloudback-up is groter dan 100 MB.");
++                var remoteSha = Convert.ToHexString(SHA256.HashData(remoteBytes));
++                if (!string.Equals(remoteSha, remote.Sha256, StringComparison.OrdinalIgnoreCase))
++                    throw new CryptographicException("De cloudback-up faalt de SHA-256-controle. Er is niets aangepast.");
++                await File.WriteAllBytesAsync(remoteZip, remoteBytes, cancellationToken);
++            }
++            finally { CryptographicOperations.ZeroMemory(remoteBytes); }
++
++            var baselineZip = await LoadBaselineAsync(vaultId, cancellationToken);
++            if (baselineZip is not null) temporary.Add(baselineZip);
++            var merge = CloudArchiveMerger.CreateMergedArchive(localZip, remoteZip, baselineZip, AppSession.Store,
++                AppSession.Accounts, AppSession.Username, mergedZip);
++            if (!merge.Success)
++                throw new CloudSyncConflictException("Er zijn wijzigingen op beide apparaten in hetzelfde item. Er is niets overschreven. Conflicterende items: " + string.Join(", ", merge.Conflicts.Take(5)));
++
++            var remoteFingerprint = CloudArchiveMerger.ContentFingerprint(remoteZip, AppSession.Store, vaultId);
++            var uploadVersion = remote.Version;
++            var mergedBytes = await File.ReadAllBytesAsync(mergedZip, cancellationToken);
++            EnsureArchiveSize(mergedZip);
++            try
++            {
++                if (!string.Equals(merge.ContentFingerprint, remoteFingerprint, StringComparison.Ordinal))
++                {
++                    var digest = Convert.ToHexString(SHA256.HashData(mergedBytes));
++                    var saved = await PutSnapshotAsync(endpoint, token, workspace, remote.Version, vaultId, digest, mergedBytes, cancellationToken);
++                    uploadVersion = saved.Version;
++                }
++            }
++            finally { CryptographicOperations.ZeroMemory(mergedBytes); }
++
++            var applied = await Task.Run(() => CloudArchiveMerger.ApplyMergedArchive(mergedZip, AppSession.Store, AppSession.Accounts, AppSession.Username), cancellationToken);
++            await SaveBaselineAsync(vaultId, mergedZip, cancellationToken);
++            var uploaded = uploadVersion != remote.Version;
++            return new CloudSyncResult(true,
++                uploaded ? "Cloudsync voltooid; de gezamenlijke gegevens zijn opgeslagen." : "Cloudsync voltooid; beide apparaten hadden dezelfde gegevens.",
++                uploadVersion, applied, uploaded);
++        }
++        finally
++        {
++            foreach (var path in temporary.Distinct(StringComparer.Ordinal))
++                try { if (File.Exists(path)) VaultStore.SecureDelete(path); } catch { }
++            SyncLock.Release();
++        }
++    }
++
++    public static async Task TryAutoSyncAsync()
++    {
++        if (!AutoSyncEnabled || AppSession.Store is null || !await HasSessionAsync()) return;
++        var now = DateTime.UtcNow;
++        if (now - _lastAutoAttemptUtc < TimeSpan.FromMinutes(2)) return;
++        _lastAutoAttemptUtc = now;
++        try { await SyncNowAsync(); }
++        catch (OperationCanceledException) { }
++        catch (Exception ex) { AppLog.Write(ex); }
++    }
++
++    static async Task<SnapshotDto?> TryGetSnapshotAsync(string endpoint, string token, string workspace, CancellationToken cancellationToken)
++    {
++        using var request = NewApiRequest(endpoint, token, workspace, HttpMethod.Get, "/api/v1/sync", null);
++        using var response = await Http.SendAsync(request, cancellationToken);
++        if (response.StatusCode == HttpStatusCode.NotFound)
++        {
++            var raw = await response.Content.ReadAsStringAsync(cancellationToken);
++            if (raw.Contains("Er is nog geen cloudsnapshot", StringComparison.OrdinalIgnoreCase)) return null;
++            throw new InvalidOperationException(ExtractError(raw, response.StatusCode));
++        }
++        return await ReadResponseAsync<SnapshotDto>(response, cancellationToken);
++    }
++
++    static async Task<PutSnapshotDto> PutSnapshotAsync(string endpoint, string token, string workspace, long expectedVersion,
++        string vaultId, string sha256, byte[] archive, CancellationToken cancellationToken)
++    {
++        if (archive.LongLength > MaxArchiveBytes) throw new InvalidDataException("De cloudback-up is groter dan 100 MB.");
++        var deviceName = DeviceInfo.Name ?? "MoodPress";
++        var payload = new { expectedVersion, sha256, vaultId,
++            encryptedArchiveBase64 = Convert.ToBase64String(archive),
++            deviceId = deviceName.Length <= 128 ? deviceName : deviceName[..128] };
++        using var request = NewApiRequest(endpoint, token, workspace, HttpMethod.Put, "/api/v1/sync", JsonContent.Create(payload, options: Json));
++        using var response = await Http.SendAsync(request, cancellationToken);
++        return await ReadResponseAsync<PutSnapshotDto>(response, cancellationToken);
++    }
++
++    static HttpRequestMessage NewApiRequest(string endpoint, string token, string workspace, HttpMethod method, string path, HttpContent? content)
++    {
++        var request = new HttpRequestMessage(method, endpoint.TrimEnd('/') + path);
++        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
++        request.Headers.Add("X-MoodPress-Workspace", workspace);
++        request.Headers.CacheControl = new CacheControlHeaderValue { NoCache = true, NoStore = true };
++        request.Content = content;
++        return request;
++    }
++
++    static async Task<T> SendApiAsync<T>(string endpoint, string token, string? workspace, HttpMethod method, string path, HttpContent? content, CancellationToken cancellationToken)
++    {
++        using var request = new HttpRequestMessage(method, endpoint.TrimEnd('/') + path);
++        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
++        if (!string.IsNullOrWhiteSpace(workspace)) request.Headers.Add("X-MoodPress-Workspace", workspace);
++        request.Content = content;
++        using var response = await Http.SendAsync(request, cancellationToken);
++        return await ReadResponseAsync<T>(response, cancellationToken);
++    }
++
++    static async Task<T> ReadResponseAsync<T>(HttpResponseMessage response, CancellationToken cancellationToken)
++    {
++        var raw = await response.Content.ReadAsStringAsync(cancellationToken);
++        if (!response.IsSuccessStatusCode) throw new InvalidOperationException(ExtractError(raw, response.StatusCode));
++        try { return JsonSerializer.Deserialize<T>(raw, Json) ?? throw new InvalidDataException("De portal gaf een leeg antwoord."); }
++        catch (JsonException ex) { throw new InvalidDataException("De portal gaf een ongeldig antwoord.", ex); }
++    }
++
++    static string ExtractError(string raw, HttpStatusCode code)
++    {
++        try
++        {
++            using var document = JsonDocument.Parse(raw);
++            if (document.RootElement.TryGetProperty("error", out var error)) return error.GetString() ?? $"Cloudfout {(int)code}.";
++        }
++        catch (JsonException) { }
++        return $"Cloudfout {(int)code}. Controleer je verbinding en portalinstellingen.";
++    }
++
++    static string NormalizeEndpoint(string endpoint)
++    {
++        var value = (endpoint ?? "").Trim().TrimEnd('/');
++        if (!Uri.TryCreate(value, UriKind.Absolute, out var uri) || !string.IsNullOrEmpty(uri.Query) || !string.IsNullOrEmpty(uri.Fragment))
++            throw new InvalidOperationException("Vul het volledige HTTPS-adres van de MoodPress-server in.");
++        if (uri.Scheme != Uri.UriSchemeHttps && !(uri.IsLoopback && uri.Scheme == Uri.UriSchemeHttp))
++            throw new InvalidOperationException("Voor veiligheid is HTTPS verplicht. Alleen localhost mag HTTP gebruiken tijdens lokaal testen.");
++        return value;
++    }
++
++    static string NewTempPath(string kind) => Path.Combine(FileSystem.CacheDirectory, $"moodpress-cloud-{kind}-{Guid.NewGuid():N}.zip");
++
++    static void EnsureArchiveSize(string path)
++    {
++        var info = new FileInfo(path);
++        if (!info.Exists || info.Length <= 0 || info.Length > MaxArchiveBytes)
++            throw new InvalidDataException("De MoodPress-back-up is leeg of groter dan 100 MB; de cloudversie is niet gewijzigd.");
++    }
++
++    static string BaselinePath(string vaultId) => Path.Combine(FileSystem.AppDataDirectory, $"moodpress-cloud-baseline-{vaultId}.bin");
++    static string BaselineKeyName(string vaultId) => $"moodpress.cloud.baseline-key.{vaultId}";
++
++    static async Task SaveBaselineAsync(string vaultId, string archivePath, CancellationToken cancellationToken)
++    {
++        var plain = await File.ReadAllBytesAsync(archivePath, cancellationToken);
++        byte[]? key = null, nonce = null, cipher = null, tag = null, output = null;
++        try
++        {
++            var encodedKey = await SecureStorage.Default.GetAsync(BaselineKeyName(vaultId));
++            if (string.IsNullOrWhiteSpace(encodedKey))
++            {
++                key = RandomNumberGenerator.GetBytes(32);
++                await SecureStorage.Default.SetAsync(BaselineKeyName(vaultId), Convert.ToBase64String(key));
++            }
++            else key = Convert.FromBase64String(encodedKey);
++            if (key.Length != 32) throw new CryptographicException("De lokale cloud-back-upsleutel is ongeldig.");
++            nonce = RandomNumberGenerator.GetBytes(12);
++            cipher = new byte[plain.Length];
++            tag = new byte[16];
++            using (var aes = new AesGcm(key, 16)) aes.Encrypt(nonce, plain, cipher, tag);
++            output = new byte[7 + nonce.Length + tag.Length + cipher.Length];
++            "MPBASE1"u8.CopyTo(output.AsSpan(0, 7));
++            nonce.CopyTo(output, 7);
++            tag.CopyTo(output, 19);
++            cipher.CopyTo(output, 35);
++            var path = BaselinePath(vaultId);
++            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
++            var temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
++            await File.WriteAllBytesAsync(temporary, output, cancellationToken);
++            File.Move(temporary, path, true);
++        }
++        finally
++        {
++            CryptographicOperations.ZeroMemory(plain);
++            if (key is not null) CryptographicOperations.ZeroMemory(key);
++            if (nonce is not null) CryptographicOperations.ZeroMemory(nonce);
++            if (cipher is not null) CryptographicOperations.ZeroMemory(cipher);
++            if (tag is not null) CryptographicOperations.ZeroMemory(tag);
++            if (output is not null) CryptographicOperations.ZeroMemory(output);
++        }
++    }
++
++    static async Task<string?> LoadBaselineAsync(string vaultId, CancellationToken cancellationToken)
++    {
++        var path = BaselinePath(vaultId);
++        if (!File.Exists(path)) return null;
++        var input = await File.ReadAllBytesAsync(path, cancellationToken);
++        byte[]? key = null, plain = null;
++        var zipPath = NewTempPath("baseline");
++        try
++        {
++            if (input.Length < 51 || !input.AsSpan(0, 7).SequenceEqual("MPBASE1"u8))
++                throw new CryptographicException("De lokale basislijn voor cloudsynchronisatie is ongeldig.");
++            var encodedKey = await SecureStorage.Default.GetAsync(BaselineKeyName(vaultId));
++            if (string.IsNullOrWhiteSpace(encodedKey)) throw new CryptographicException("De lokale sleutel van de synchronisatiebasislijn ontbreekt.");
++            key = Convert.FromBase64String(encodedKey);
++            if (key.Length != 32) throw new CryptographicException("De lokale basislijnsleutel heeft een ongeldige lengte.");
++            var nonce = input.AsSpan(7, 12).ToArray();
++            var tag = input.AsSpan(19, 16).ToArray();
++            var cipher = input.AsSpan(35).ToArray();
++            plain = new byte[cipher.Length];
++            try { using var aes = new AesGcm(key, 16); aes.Decrypt(nonce, cipher, tag, plain); }
++            finally
++            {
++                CryptographicOperations.ZeroMemory(nonce);
++                CryptographicOperations.ZeroMemory(tag);
++                CryptographicOperations.ZeroMemory(cipher);
++            }
++            if (plain.Length == 0 || plain.LongLength > MaxArchiveBytes) throw new CryptographicException("De lokale basislijn is te groot of leeg.");
++            await File.WriteAllBytesAsync(zipPath, plain, cancellationToken);
++            return zipPath;
++        }
++        catch
++        {
++            try { if (File.Exists(zipPath)) VaultStore.SecureDelete(zipPath); } catch { }
++            throw;
++        }
++        finally
++        {
++            CryptographicOperations.ZeroMemory(input);
++            if (plain is not null) CryptographicOperations.ZeroMemory(plain);
++            if (key is not null) CryptographicOperations.ZeroMemory(key);
++        }
++    }
++
++    private sealed record SessionDto(string AccessToken, DateTimeOffset ExpiresAt, CloudUserDto User);
++    private sealed record CloudUserDto(string Id, string Email, string DisplayName);
++    private sealed record WorkspaceDto(string Id, string Name, string Role, string[] Categories, string MembershipId);
++    private sealed record MeDto(CloudUserDto User, WorkspaceDto[] Workspaces);
++    private sealed record SnapshotDto(long Version, string Sha256, string VaultId, string EncryptedArchiveBase64, DateTimeOffset UpdatedAt, string DeviceId);
++    private sealed record PutSnapshotDto(long Version, string Sha256, DateTimeOffset UpdatedAt);
++}
++
++public sealed record CloudSyncResult(bool Succeeded, string Message, long Version, int AppliedRecords, bool Uploaded);
++public sealed class CloudSyncConflictException(string message) : Exception(message);
+
+diff -ruN moodpress_base_flat/MijnGevoel.Android/CloudArchiveMerger.cs moodpress4_build/MijnGevoel.Android/CloudArchiveMerger.cs
+--- moodpress_base_flat/MijnGevoel.Android/CloudArchiveMerger.cs	1970-01-01 00:00:00.000000000 +0000
++++ moodpress4_build/MijnGevoel.Android/CloudArchiveMerger.cs	2026-10-16 14:00:00.000000000 +0000
+@@ -0,0 +1,302 @@
++using System.IO.Compression;
++using System.Security.Cryptography;
++using System.Text;
++using System.Text.RegularExpressions;
++using MijnGevoel.Core.Data;
++using MijnGevoel.Core.Security;
++
++namespace MijnGevoel.AndroidApp;
++
++/// <summary>Three-way merge of encrypted MoodPress records; conflicts abort before either side is changed.</summary>
++public static class CloudArchiveMerger
++{
++    const int MaxEntries = 20_000;
++    const long MaxEntryBytes = 64L * 1024 * 1024;
++    const long MaxArchiveBytes = 100L * 1024 * 1024;
++    static readonly Regex AccountPath = new(@"^accounts/(?<hash>[A-Fa-f0-9]{64})\.json$", RegexOptions.CultureInvariant);
++    static readonly Regex DataPath = new(@"^data/(?<hash>[A-Fa-f0-9]{64})/(?<kind>[a-z0-9][a-z0-9-]*)-(?<id>[A-Fa-f0-9]{32})\.mg$", RegexOptions.CultureInvariant);
++
++    sealed record Archive(string AccountPath, byte[] AccountBytes, Dictionary<string, byte[]> Records, string Fingerprint);
++    public sealed record MergeResult(bool Success, string[] Conflicts, string ContentFingerprint);
++
++    public static string ContentFingerprint(string archivePath, VaultStore store, string vaultId)
++    {
++        var archive = ReadArchive(archivePath, store, vaultId);
++        try { return archive.Fingerprint; }
++        finally { WipeArchive(archive); }
++    }
++
++    public static MergeResult CreateMergedArchive(string localZip, string remoteZip, string? baselineZip, VaultStore store,
++        AccountService accounts, string username, string outputZip)
++    {
++        var vaultId = Path.GetFileNameWithoutExtension(accounts.AccountFilePath(username));
++        var local = ReadArchive(localZip, store, vaultId);
++        Archive? remote = null;
++        Archive? baseline = null;
++        try
++        {
++            remote = ReadArchive(remoteZip, store, vaultId);
++            if (baselineZip is not null) baseline = ReadArchive(baselineZip, store, vaultId);
++            var keys = local.Records.Keys.Concat(remote.Records.Keys)
++                .Concat(baseline?.Records.Keys ?? Enumerable.Empty<string>())
++                .Distinct(StringComparer.Ordinal).OrderBy(x => x, StringComparer.Ordinal).ToArray();
++            var selected = new Dictionary<string, byte[]>(StringComparer.Ordinal);
++            var conflicts = new List<string>();
++
++            foreach (var path in keys)
++            {
++                local.Records.TryGetValue(path, out var localBytes);
++                remote.Records.TryGetValue(path, out var remoteBytes);
++                byte[]? baseBytes = null;
++                if (baseline is not null) baseline.Records.TryGetValue(path, out baseBytes);
++
++                var localChanged = baseline is null ? localBytes is not null : !Same(localBytes, baseBytes);
++                var remoteChanged = baseline is null ? remoteBytes is not null : !Same(remoteBytes, baseBytes);
++                byte[]? chosen;
++
++                if (localChanged && remoteChanged)
++                {
++                    if (!Same(localBytes, remoteBytes))
++                    {
++                        conflicts.Add(Path.GetFileName(path));
++                        continue;
++                    }
++                    chosen = localBytes;
++                }
++                else if (localChanged) chosen = localBytes;
++                else if (remoteChanged) chosen = remoteBytes;
++                else chosen = baseBytes ?? localBytes ?? remoteBytes;
++
++                if (chosen is not null) selected[path] = chosen;
++            }
++
++            if (conflicts.Count > 0) return new MergeResult(false, conflicts.ToArray(), "");
++            WriteArchive(outputZip, local.AccountPath, local.AccountBytes, selected);
++            return new MergeResult(true, Array.Empty<string>(), Fingerprint(selected));
++        }
++        finally
++        {
++            WipeArchive(local);
++            if (remote is not null) WipeArchive(remote);
++            if (baseline is not null) WipeArchive(baseline);
++        }
++    }
++
++    public static int ApplyMergedArchive(string mergedZip, VaultStore store, AccountService accounts, string username)
++    {
++        var vaultId = Path.GetFileNameWithoutExtension(accounts.AccountFilePath(username));
++        var archive = ReadArchive(mergedZip, store, vaultId);
++        try
++        {
++            var dataFolder = Path.GetFullPath(accounts.DataFolder(username));
++            var parent = Path.GetDirectoryName(dataFolder)!;
++            Directory.CreateDirectory(parent);
++            var stage = Path.Combine(parent, ".moodpress-sync-stage-" + Guid.NewGuid().ToString("N"));
++            var rollback = Path.Combine(parent, ".moodpress-sync-rollback-" + Guid.NewGuid().ToString("N"));
++            Directory.CreateDirectory(stage);
++            var movedOld = false;
++            try
++            {
++                // Preserve auxiliary files; the validated .mg set is the complete merged record state.
++                if (Directory.Exists(dataFolder))
++                {
++                    foreach (var file in Directory.GetFiles(dataFolder, "*", SearchOption.AllDirectories))
++                    {
++                        if (string.Equals(Path.GetExtension(file), ".mg", StringComparison.OrdinalIgnoreCase)) continue;
++                        var relative = Path.GetRelativePath(dataFolder, file);
++                        var copy = Path.GetFullPath(Path.Combine(stage, relative));
++                        if (!IsWithin(stage, copy)) throw new InvalidDataException("Een lokaal bestand staat buiten de verwachte gegevensmap.");
++                        Directory.CreateDirectory(Path.GetDirectoryName(copy)!);
++                        File.Copy(file, copy, overwrite: false);
++                    }
++                }
++
++                var oldHashes = new Dictionary<string, string>(StringComparer.Ordinal);
++                if (Directory.Exists(dataFolder))
++                {
++                    foreach (var file in Directory.GetFiles(dataFolder, "*.mg", SearchOption.TopDirectoryOnly))
++                    {
++                        var bytes = File.ReadAllBytes(file);
++                        try { oldHashes[Path.GetFileName(file)] = Convert.ToHexString(SHA256.HashData(bytes)); }
++                        finally { CryptographicOperations.ZeroMemory(bytes); }
++                    }
++                }
++
++                foreach (var entry in archive.Records)
++                    File.WriteAllBytes(Path.Combine(stage, Path.GetFileName(entry.Key)), entry.Value);
++
++                var newHashes = archive.Records.ToDictionary(
++                    entry => Path.GetFileName(entry.Key),
++                    entry => Convert.ToHexString(SHA256.HashData(entry.Value)),
++                    StringComparer.Ordinal);
++                var changed = 0;
++                foreach (var name in oldHashes.Keys.Union(newHashes.Keys, StringComparer.Ordinal))
++                    if (!oldHashes.TryGetValue(name, out var oldHash) || !newHashes.TryGetValue(name, out var newHash) ||
++                        !string.Equals(oldHash, newHash, StringComparison.Ordinal)) changed++;
++
++                if (Directory.Exists(dataFolder))
++                {
++                    Directory.Move(dataFolder, rollback);
++                    movedOld = true;
++                }
++                try { Directory.Move(stage, dataFolder); }
++                catch
++                {
++                    if (movedOld && !Directory.Exists(dataFolder)) Directory.Move(rollback, dataFolder);
++                    movedOld = false;
++                    throw;
++                }
++
++                if (movedOld)
++                {
++                    try { SecureDeleteDirectory(rollback); } catch { /* New data is already committed; cleanup can be retried later. */ }
++                }
++                movedOld = false;
++                return changed;
++            }
++            finally
++            {
++                try { if (Directory.Exists(stage)) SecureDeleteDirectory(stage); } catch { }
++                if (movedOld && Directory.Exists(rollback) && !Directory.Exists(dataFolder))
++                {
++                    try { Directory.Move(rollback, dataFolder); } catch { }
++                }
++            }
++        }
++        finally { WipeArchive(archive); }
++    }
++
++    static Archive ReadArchive(string path, VaultStore store, string vaultId)
++    {
++        using var zip = ZipFile.OpenRead(path);
++        if (zip.Entries.Count == 0 || zip.Entries.Count > MaxEntries || new FileInfo(path).Length > MaxArchiveBytes)
++            throw new InvalidDataException("De cloudback-up is leeg, te groot of bevat te veel bestanden.");
++        byte[]? accountBytes = null;
++        string? accountPath = null;
++        var records = new Dictionary<string, byte[]>(StringComparer.Ordinal);
++        var seen = new HashSet<string>(StringComparer.Ordinal);
++        long totalBytes = 0;
++        try
++        {
++            foreach (var entry in zip.Entries)
++            {
++                var name = entry.FullName;
++                if (string.IsNullOrWhiteSpace(name) || name.Contains('\\') || name.StartsWith('/') ||
++                    name.Split('/').Any(part => part is "." or ".."))
++                    throw new InvalidDataException("De cloudback-up bevat een onveilige bestandsnaam.");
++                if (!seen.Add(name)) throw new InvalidDataException("De cloudback-up bevat dubbele bestandsnamen.");
++                totalBytes = checked(totalBytes + entry.Length);
++                if (totalBytes > MaxArchiveBytes) throw new InvalidDataException("De cloudback-up is te groot.");
++
++                var accountMatch = AccountPath.Match(name);
++                if (accountMatch.Success)
++                {
++                    if (accountPath is not null || !string.Equals(accountMatch.Groups["hash"].Value, vaultId, StringComparison.OrdinalIgnoreCase) || entry.Length > 2 * 1024 * 1024)
++                        throw new InvalidDataException("De cloudback-up hoort niet bij het ingelogde MoodPress-account.");
++                    accountPath = name;
++                    accountBytes = ReadEntry(entry, 2 * 1024 * 1024);
++                    continue;
++                }
++
++                var dataMatch = DataPath.Match(name);
++                if (!dataMatch.Success || !string.Equals(dataMatch.Groups["hash"].Value, vaultId, StringComparison.OrdinalIgnoreCase) || entry.Length > MaxEntryBytes)
++                    throw new InvalidDataException("De cloudback-up bevat een ongeldig of verkeerd gekoppeld gegevensrecord.");
++                var kind = dataMatch.Groups["kind"].Value;
++                if (!Guid.TryParseExact(dataMatch.Groups["id"].Value, "N", out var id))
++                    throw new InvalidDataException("Een gegevensrecord heeft een ongeldige ID.");
++                var bytes = ReadEntry(entry, checked((int)MaxEntryBytes));
++                if (!store.IsEncryptedRecordForCurrentKey(kind, id, bytes))
++                {
++                    CryptographicOperations.ZeroMemory(bytes);
++                    throw new CryptographicException("De cloudback-up bevat een record dat niet bij de huidige kluissleutel hoort.");
++                }
++                records.Add(name, bytes);
++            }
++
++            if (accountPath is null || accountBytes is null)
++                throw new InvalidDataException("De cloudback-up mist het huidige accountbestand.");
++            return new Archive(accountPath, accountBytes, records, Fingerprint(records));
++        }
++        catch
++        {
++            if (accountBytes is not null) CryptographicOperations.ZeroMemory(accountBytes);
++            foreach (var value in records.Values) CryptographicOperations.ZeroMemory(value);
++            throw;
++        }
++    }
++
++    static byte[] ReadEntry(ZipArchiveEntry entry, int maxBytes)
++    {
++        if (entry.Length < 0 || entry.Length > maxBytes) throw new InvalidDataException("Een bestand in de cloudback-up is te groot.");
++        using var input = entry.Open();
++        using var output = new MemoryStream((int)entry.Length);
++        var buffer = new byte[81920];
++        int read;
++        while ((read = input.Read(buffer, 0, buffer.Length)) > 0)
++        {
++            if (output.Length + read > maxBytes) throw new InvalidDataException("Een bestand in de cloudback-up is groter dan toegestaan.");
++            output.Write(buffer, 0, read);
++        }
++        if (output.Length != entry.Length) throw new InvalidDataException("Een bestand in de cloudback-up is onvolledig.");
++        return output.ToArray();
++    }
++
++    static void WriteArchive(string path, string accountPath, byte[] accountBytes, Dictionary<string, byte[]> records)
++    {
++        using var zip = ZipFile.Open(path, ZipArchiveMode.Create);
++        var account = zip.CreateEntry(accountPath, CompressionLevel.Optimal);
++        using (var stream = account.Open()) stream.Write(accountBytes);
++        foreach (var item in records.OrderBy(p => p.Key, StringComparer.Ordinal))
++        {
++            var entry = zip.CreateEntry(item.Key, CompressionLevel.Optimal);
++            using var stream = entry.Open();
++            stream.Write(item.Value);
++        }
++    }
++
++    static string Fingerprint(Dictionary<string, byte[]> records)
++    {
++        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
++        foreach (var item in records.OrderBy(p => p.Key, StringComparer.Ordinal))
++        {
++            var pathBytes = Encoding.UTF8.GetBytes(item.Key);
++            var contentHash = SHA256.HashData(item.Value);
++            hash.AppendData(pathBytes);
++            hash.AppendData(new byte[] { 0 });
++            hash.AppendData(contentHash);
++            CryptographicOperations.ZeroMemory(pathBytes);
++            CryptographicOperations.ZeroMemory(contentHash);
++        }
++        return Convert.ToHexString(hash.GetHashAndReset());
++    }
++
++    static bool Same(byte[]? left, byte[]? right)
++    {
++        if (ReferenceEquals(left, right)) return true;
++        if (left is null || right is null || left.Length != right.Length) return false;
++        var leftHash = SHA256.HashData(left);
++        var rightHash = SHA256.HashData(right);
++        try { return CryptographicOperations.FixedTimeEquals(leftHash, rightHash); }
++        finally { CryptographicOperations.ZeroMemory(leftHash); CryptographicOperations.ZeroMemory(rightHash); }
++    }
++
++    static void WipeArchive(Archive archive)
++    {
++        CryptographicOperations.ZeroMemory(archive.AccountBytes);
++        foreach (var record in archive.Records.Values) CryptographicOperations.ZeroMemory(record);
++    }
++
++    static bool IsWithin(string root, string target)
++    {
++        var relative = Path.GetRelativePath(Path.GetFullPath(root), Path.GetFullPath(target));
++        return !Path.IsPathRooted(relative) && relative != ".." && !relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal);
++    }
++
++    static void SecureDeleteDirectory(string directory)
++    {
++        if (!Directory.Exists(directory)) return;
++        foreach (var file in Directory.GetFiles(directory, "*", SearchOption.AllDirectories))
++            try { VaultStore.SecureDelete(file); } catch { try { File.Delete(file); } catch { } }
++        Directory.Delete(directory, recursive: true);
++    }
++}
+
+diff -ruN moodpress_base_flat/MijnGevoel.Android/FeaturePage.CloudSync.cs moodpress4_build/MijnGevoel.Android/FeaturePage.CloudSync.cs
+--- moodpress_base_flat/MijnGevoel.Android/FeaturePage.CloudSync.cs	1970-01-01 00:00:00.000000000 +0000
++++ moodpress4_build/MijnGevoel.Android/FeaturePage.CloudSync.cs	2026-10-16 14:00:00.000000000 +0000
+@@ -0,0 +1,79 @@
++namespace MijnGevoel.AndroidApp;
++
++public sealed partial class FeaturePage
++{
++    void BuildCloudSyncPanel()
++    {
++        AddLabel("Automatische cloudsynchronisatie", title: true);
++        AddLabel("Koppel de MoodPress-cloudserver één keer. Wanneer je terugkeert naar het startscherm controleert MoodPress automatisch op wijzigingen; je kunt ook direct synchroniseren. HTTPS is verplicht.", muted: true);
++        var endpoint = AppUi.Entry("HTTPS-adres van de MoodPress-cloudserver");
++        var email = AppUi.Entry("Portal-e-mailadres", keyboard: Keyboard.Email);
++        var displayName = AppUi.Entry("Je naam (alleen voor een nieuw portalaccount)");
++        var password = AppUi.Entry("Portalwachtwoord (minimaal 12 tekens)", password: true);
++        var status = AppUi.Label("Nog niet verbonden met een cloudserver.", muted: true);
++        var auto = new Switch { IsToggled = CloudSyncClient.AutoSyncEnabled, HorizontalOptions = LayoutOptions.Start };
++        auto.Toggled += (_, e) => CloudSyncClient.AutoSyncEnabled = e.Value;
++        AddField("Cloudserver (HTTPS)", endpoint);
++        AddField("E-mailadres", email);
++        AddField("Naam voor account maken", displayName);
++        AddField("Portalwachtwoord", password);
++        AddLabel("Automatisch synchroniseren bij terugkeer naar het startscherm", muted: true);
++        Add(auto);
++        Add(status);
++
++        async Task ConnectAsync(bool register)
++        {
++            try
++            {
++                status.Text = "Bezig met veilig verbinden…";
++                await CloudSyncClient.AuthenticateAsync(endpoint.Text ?? "", email.Text ?? "", password.Text ?? "",
++                    register, displayName.Text ?? "");
++                password.Text = "";
++                status.Text = register ? "Cloudaccount gemaakt en gekoppeld." : "Ingelogd op de MoodPress-cloud.";
++            }
++            catch (Exception ex) { status.Text = ex.Message; }
++        }
++
++        AddAsyncButton("Inloggen op cloudaccount", async () => await ConnectAsync(false));
++        AddAsyncButton("Nieuw cloudaccount maken", async () => await ConnectAsync(true), quiet: true);
++        AddAsyncButton("Nu synchroniseren", async () =>
++        {
++            try
++            {
++                status.Text = "Cloudsnapshot controleren en versleutelde gegevens vergelijken…";
++                var result = await CloudSyncClient.SyncNowAsync();
++                status.Text = $"{result.Message} Versie {result.Version}; gewijzigde bestanden toegepast: {result.AppliedRecords}.";
++            }
++            catch (CloudSyncConflictException ex) { status.Text = ex.Message; }
++            catch (Exception ex) { status.Text = ex.Message; }
++        });
++        AddAsyncButton("Cloudaccount ontkoppelen", async () =>
++        {
++            try
++            {
++                await CloudSyncClient.DisconnectAsync();
++                password.Text = "";
++                status.Text = "Cloudaccount ontkoppeld op dit apparaat. Je lokale MoodPress-gegevens zijn niet verwijderd.";
++            }
++            catch (Exception ex) { status.Text = "De lokale accountgegevens zijn niet gewijzigd. " + ex.Message; }
++        }, quiet: true);
++
++        _ = LoadSavedCloudSettingsAsync();
++        async Task LoadSavedCloudSettingsAsync()
++        {
++            try
++            {
++                var savedEndpoint = await CloudSyncClient.LoadEndpointAsync();
++                var savedEmail = await CloudSyncClient.LoadEmailHintAsync();
++                MainThread.BeginInvokeOnMainThread(() =>
++                {
++                    if (string.IsNullOrWhiteSpace(endpoint.Text)) endpoint.Text = savedEndpoint;
++                    if (string.IsNullOrWhiteSpace(email.Text)) email.Text = savedEmail;
++                });
++                if (await CloudSyncClient.HasSessionAsync())
++                    MainThread.BeginInvokeOnMainThread(() => status.Text = "Er is een opgeslagen cloudlogin. Tik op 'Nu synchroniseren' om de wijzigingen te verwerken.");
++            }
++            catch (Exception ex) { AppLog.Write(ex); }
++        }
++    }
++}
