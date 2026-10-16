@@ -997,7 +997,8 @@ diff -ruN moodpress_base_flat/MijnGevoel.Android/FeaturePage.MoodPress40.cs mood
 +        Add(AppUi.Card(AppUi.Stack(AppUi.Label("MoodPress", title: true), AppUi.Label("Tik om de app te openen en zelf te kiezen hoe je je voelt."), AppUi.Button("🔊 Voorlezen", () => AppUi.Speak("MoodPress. Tik om de app te openen en zelf te kiezen hoe je je voelt."), quiet: true))));
 +        AddLabel("Zo voeg je de widget toe", title: true);
 +        AddLabel("1. Ga naar het startscherm van Android.\n2. Houd een lege plek ingedrukt.\n3. Kies Widgets.\n4. Zoek MoodPress en sleep de widget naar een plek.\n5. De widget opent MoodPress wanneer je erop tikt.");
-+        AddLabel("De widget is alleen een snelle ingang. Hij toont geen privé-informatie op het vergrendelscherm.", muted: true);+    }
++        AddLabel("De widget is alleen een snelle ingang. Hij toont geen privé-informatie op het vergrendelscherm.", muted: true);
++    }
 +
 +    void BuildBackupHealth()
 +    {
@@ -1996,7 +1997,8 @@ diff -ruN moodpress_base_flat/MijnGevoel.Android/RoutineReminderNotifications.cs
              var date = after.Date.AddDays(offset);
              if ((item.DaysMask & (1 << (int)date.DayOfWeek)) == 0) continue;
 +            if (item.SkipDate.HasValue && date.Date == item.SkipDate.Value.Date) continue;
-             var candidate = date.Add(clock.ToTimeSpan());+            if (candidate <= after.AddSeconds(1)) continue;
+             var candidate = date.Add(clock.ToTimeSpan());
++            if (candidate <= after.AddSeconds(1)) continue;
 +            candidate = ApplyQuietHours(item, candidate);
              if (candidate > after.AddSeconds(1)) return candidate;
          }
@@ -2995,7 +2997,8 @@ diff -ruN moodpress_base_flat/scripts/check-moodpress-4.sh moodpress4_build/scri
 +grep -q 'public static class SecureDeviceTransfer' 'MijnGevoel.Core/Data/SecureDeviceTransfer.cs'
 +grep -q 'DetectsWhetherEncryptedRecordsBelongToTheActiveVault' "$tests"
 +grep -q 'IsEncryptedRecordForCurrentKey' 'MijnGevoel.Core/Data/VaultStore.cs'
-+grep -q 'BuildWeekReaderSummary' "$extra"+test -f 'MijnGevoel.Android/Platforms/Android/MoodPressWidgetProvider.cs'
++grep -q 'BuildWeekReaderSummary' "$extra"
++test -f 'MijnGevoel.Android/Platforms/Android/MoodPressWidgetProvider.cs'
 +test -f 'MijnGevoel.Android/Platforms/Android/Resources/xml/moodpress_widget_info.xml'
 +grep -q 'AppWidgetProvider' 'MijnGevoel.Android/Platforms/Android/MoodPressWidgetProvider.cs'
 +grep -q 'appwidget-provider' 'MijnGevoel.Android/Platforms/Android/Resources/xml/moodpress_widget_info.xml'
