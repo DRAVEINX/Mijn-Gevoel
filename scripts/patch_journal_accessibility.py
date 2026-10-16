@@ -251,15 +251,28 @@ def patch_journal_draft_and_dictation(app_dir: Path, target: str) -> None:
     elif "Nieuw leeg concept." not in text:
         raise RuntimeError(f"Could not locate journal new-entry action in {page}")
 
-    delete_anchor = 'Store.Delete(kind, id); current = null; text.Text = ""; if (withMood) mood.SelectedIndex = 0; status.Text = "Verwijderd."; ReloadList(list);'
-    if delete_anchor in text:
-        text = text.replace(
-            delete_anchor,
-            'Store.Delete(kind, id); Store.Delete(draftKind, Guid.Empty); draftDirty = false; current = null; suppressDraftChanges = true; text.Text = ""; if (withMood) mood.SelectedIndex = 0; suppressDraftChanges = false; status.Text = "Verwijderd."; draftStatus.Text = "Verwijderd. Er staat geen concept meer klaar."; ReloadList(list);',
-            1,
+    if "draftStatus.Text = \"Verwijderd. Er staat geen concept meer klaar.\"" not in text:
+        journal_start = text.find("    void BuildJournal(bool withMood)")
+        journal_end = text.find("    async Task StartVoiceRecordingAsync()", journal_start + 1)
+        if journal_start < 0 or journal_end < 0:
+            raise RuntimeError(f"Could not isolate journal implementation in {page}")
+        journal = text[journal_start:journal_end]
+        delete_pattern = re.compile(
+            r'Store\.Delete\(kind, id\);\s*current = null;\s*text\.Text = "";\s*'
+            r'(?:if \(withMood\) mood\.SelectedIndex = 0;\s*)?'
+            r'status\.Text = "Verwijderd\.";\s*ReloadList\(list\);'
         )
-    elif "draftStatus.Text = \"Verwijderd. Er staat geen concept meer klaar.\"" not in text:
-        raise RuntimeError(f"Could not locate journal delete action in {page}")
+        journal, replaced = delete_pattern.subn(
+            'Store.Delete(kind, id); Store.Delete(draftKind, Guid.Empty); draftDirty = false; '
+            'current = null; suppressDraftChanges = true; text.Text = ""; '
+            'if (withMood) mood.SelectedIndex = 0; suppressDraftChanges = false; '
+            'status.Text = "Verwijderd."; draftStatus.Text = "Verwijderd. Er staat geen concept meer klaar."; ReloadList(list);',
+            journal,
+            count=1,
+        )
+        if replaced != 1:
+            raise RuntimeError(f"Could not patch journal deletion in {page}")
+        text = text[:journal_start] + journal + text[journal_end:]
 
     speech_anchor = "    async Task StartVoiceRecordingAsync()"
     if "    async Task ToggleSpeechToTextAsync()" not in text:
