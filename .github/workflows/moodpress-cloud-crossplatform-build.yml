@@ -62,16 +62,17 @@ jobs:
           $project = Join-Path $env:MOODPRESS_WINDOWS_ROOT "MoodPress.WindowsApp\MoodPress.WindowsApp.csproj"
           dotnet restore $project
           if ($LASTEXITCODE -ne 0) { throw "Windows app restore failed." }
-          dotnet build $project --configuration Release --framework net10.0-windows10.0.19041.0 -p:RuntimeIdentifierOverride=win-x64 --warnaserror
+          dotnet build $project --configuration Release --framework net10.0-windows10.0.19041.0 -p:RuntimeIdentifierOverride=win-x64 -p:NoWarn=MSB3277 --warnaserror
           if ($LASTEXITCODE -ne 0) { throw "Windows cloud-sync app build failed." }
 
+      # MSB3277 is narrowly suppressed because the .NET 8 Core/QRCoder dependency is unified to the explicit .NET 10 System.Drawing.Common reference in the Windows app. All other warnings remain errors.
       - name: Publish Windows app
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
           $project = Join-Path $env:MOODPRESS_WINDOWS_ROOT "MoodPress.WindowsApp\MoodPress.WindowsApp.csproj"
           $out = Join-Path $env:RUNNER_TEMP "moodpress-windows-cloud-publish"
-          dotnet publish $project --configuration Release --framework net10.0-windows10.0.19041.0 -p:RuntimeIdentifierOverride=win-x64 --self-contained true -p:WindowsPackageType=None -p:WindowsAppSDKSelfContained=true --warnaserror --output $out
+          dotnet publish $project --configuration Release --framework net10.0-windows10.0.19041.0 -p:RuntimeIdentifierOverride=win-x64 --self-contained true -p:WindowsPackageType=None -p:WindowsAppSDKSelfContained=true -p:NoWarn=MSB3277 --warnaserror --output $out
           if ($LASTEXITCODE -ne 0) { throw "Windows cloud-sync publish failed." }
           if (!(Test-Path (Join-Path $out "MoodPress.exe"))) { throw "MoodPress.exe was not produced." }
           $count = @(Get-ChildItem $out -Recurse -File).Count
