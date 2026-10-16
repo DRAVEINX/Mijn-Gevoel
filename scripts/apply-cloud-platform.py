@@ -742,27 +742,27 @@ def sync_portable_feature_methods(android_source_root: Path, app_dir: Path, name
         target = target[:start] + modern_method + target[end:]
         print(f"Ported {method_name} from Android 2.5.2 into {app_dir.name}")
 
-    # These methods are new dependencies of the modern daily check-in screen.
+        # These methods are new dependencies of the modern daily check-in screen.
     # Keep them shared across Windows and iOS instead of leaving missing callbacks.
     for helper_name in (
         "SaveQuickFeelingAsync", "QuickFeelingEmoji",
         "SendQuickSignalAsync", "ManageMoodCheckInAsync"
     ):
-        if re.search(rf"(?m)^    .*\\b{re.escape(helper_name)}\\s*\\(", target):
+        if re.search(rf"(?m)^    .*\b{re.escape(helper_name)}\s*\(", target):
             continue
         _, _, helper_body = extract_csharp_method(source, helper_name)
-        insert_at = target.rfind("\\n}")
+        insert_at = target.rfind("\n}")
         if insert_at < 0:
             raise RuntimeError(f"Could not find FeaturePage class terminator in {target_path}")
-        target = target[:insert_at] + "\\n\\n" + helper_body + target[insert_at:]
+        target = target[:insert_at] + "\n\n" + helper_body + target[insert_at:]
         print(f"Added shared helper {helper_name} to {app_dir.name}")
 
     communication_using = "using Microsoft.Maui.ApplicationModel.Communication;"
     if communication_using not in target:
-        namespace_match = re.search(r"(?m)^namespace\\s+[A-Za-z0-9_.]+;", target)
+        namespace_match = re.search(r"(?m)^namespace\s+[A-Za-z0-9_.]+;", target)
         if not namespace_match:
             raise RuntimeError(f"Could not locate namespace to add SMS API using in {target_path}")
-        target = target[:namespace_match.start()] + communication_using + "\\n" + target[namespace_match.start():]
+        target = target[:namespace_match.start()] + communication_using + "\n" + target[namespace_match.start():]
 
     target_path.write_text(target, encoding="utf-8")
 
