@@ -614,11 +614,19 @@ def patch_feature_routing(app_dir: Path, namespace: str, repo_root: Path, core_d
 
 
 def extract_csharp_method(source: str, method_name: str) -> tuple[int, int, str]:
-    """Find a top-level C# void method by balanced braces and return its source span."""
-    pattern = re.compile(rf"(?m)^    void {re.escape(method_name)}\s*\([^\n]*\)\s*\{{")
+    """Find a top-level C# method (void, Task, or expression-bodied) with balanced braces."""
+    pattern = re.compile(
+        rf"(?m)^    (?:(?:async|static|virtual|override|new|sealed|public|private|internal|protected)\s+)*"
+        rf"(?:[\w?.]+(?:<[^>\n]+>)?(?:\[\])?\s+)+{re.escape(method_name)}\s*\([^\n]*\)\s*(?P<body>\{{|=>)"
+    )
     match = pattern.search(source)
     if not match:
         raise RuntimeError(f"Could not find method {method_name} in C# source")
+    if match.group("body") == "=>":
+        semicolon = source.find(";", match.end())
+        if semicolon < 0:
+            raise RuntimeError(f"Could not find expression-bodied method terminator for {method_name}")
+        return match.start(), semicolon + 1, source[match.start():semicolon + 1]
     opening = source.find("{", match.start(), match.end())
     depth = 0
     for index in range(opening, len(source)):
@@ -671,7 +679,7 @@ def sync_portable_feature_methods(android_source_root: Path, app_dir: Path, name
 
     method_names = (
         "BuildStoplicht", "BuildStoplichtHistory", "BuildAgenda", "BuildDay",
-        "BuildRoutines", "BuildRoutineReminders", "BuildBreath", "BuildCalm",
+        "BuildRoutines", "BuildRoutineReminders", "BuildCalm",
         "BuildSensory", "BuildBody", "BuildMoodHistory", "BuildDailyCheckIn",
         "BuildMoodCalendar", "BuildMoodInsights", "BuildFeelingWords",
         "BuildCards", "BuildTalkPrep", "BuildSafetyPlan", "BuildShare",
@@ -733,6 +741,28 @@ def sync_portable_feature_methods(android_source_root: Path, app_dir: Path, name
         start, end, _ = extract_csharp_method(target, method_name)
         target = target[:start] + modern_method + target[end:]
         print(f"Ported {method_name} from Android 2.5.2 into {app_dir.name}")
+
+    # These methods are new dependencies of the modern daily check-in screen.
+    # Keep them shared across Windows and iOS instead of leaving missing callbacks.
+    for helper_name in (
+        "SaveQuickFeelingAsync", "QuickFeelingEmoji",
+        "SendQuickSignalAsync", "ManageMoodCheckInAsync"
+    ):
+        if re.search(rf"(?m)^    .*\\b{re.escape(helper_name)}\\s*\\(", target):
+            continue
+        _, _, helper_body = extract_csharp_method(source, helper_name)
+        insert_at = target.rfind("\\n}")
+        if insert_at < 0:
+            raise RuntimeError(f"Could not find FeaturePage class terminator in {target_path}")
+        target = target[:insert_at] + "\\n\\n" + helper_body + target[insert_at:]
+        print(f"Added shared helper {helper_name} to {app_dir.name}")
+
+    communication_using = "using Microsoft.Maui.ApplicationModel.Communication;"
+    if communication_using not in target:
+        namespace_match = re.search(r"(?m)^namespace\\s+[A-Za-z0-9_.]+;", target)
+        if not namespace_match:
+            raise RuntimeError(f"Could not locate namespace to add SMS API using in {target_path}")
+        target = target[:namespace_match.start()] + communication_using + "\\n" + target[namespace_match.start():]
 
     target_path.write_text(target, encoding="utf-8")
 
