@@ -651,6 +651,25 @@ def sync_portable_feature_methods(android_source_root: Path, app_dir: Path, name
     target_path = app_dir / "FeaturePage.cs"
     target = target_path.read_text(encoding="utf-8")
 
+    # The current Android check-in screen can open a stored item for editing.
+    # The older Windows/iOS constructors do not accept this optional identifier yet.
+    if "readonly Guid? _editingMoodCheckInId;" not in target:
+        field_anchor = "    readonly Guid? _targetShareId;"
+        if target.count(field_anchor) != 1:
+            raise RuntimeError(f"Could not locate target-share field in {target_path}")
+        target = target.replace(field_anchor, field_anchor + "\n    readonly Guid? _editingMoodCheckInId;", 1)
+    if "Guid? editingMoodCheckInId = null" not in target:
+        old_signature = "public FeaturePage(FeatureKind kind, Guid? targetShareId = null)"
+        new_signature = "public FeaturePage(FeatureKind kind, Guid? targetShareId = null, Guid? editingMoodCheckInId = null)"
+        if target.count(old_signature) != 1:
+            raise RuntimeError(f"Could not locate the legacy FeaturePage constructor in {target_path}")
+        target = target.replace(old_signature, new_signature, 1)
+    if "_editingMoodCheckInId = editingMoodCheckInId;" not in target:
+        assignment_anchor = "        _targetShareId = targetShareId;"
+        if target.count(assignment_anchor) != 1:
+            raise RuntimeError(f"Could not locate target-share constructor assignment in {target_path}")
+        target = target.replace(assignment_anchor, assignment_anchor + "\n        _editingMoodCheckInId = editingMoodCheckInId;", 1)
+
     # Feature visibility settings and the dashboard share this same catalog.
     catalog_path = android_app / "FeatureCatalog.cs"
     if not catalog_path.is_file():
