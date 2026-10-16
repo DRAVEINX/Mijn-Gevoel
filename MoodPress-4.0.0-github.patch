@@ -166,7 +166,7 @@ diff -ruN moodpress_base_flat/MijnGevoel.Android/DashboardPage.cs moodpress4_bui
          if (columns == _shortcutColumns || AppSession.Store is null) return;
          _shortcutColumns = columns;
          Build();
-@@ -520,6 +521,7 @@
+@@ -520,6 +522,7 @@
      protected override async void OnAppearing()
      {
          base.OnAppearing();
