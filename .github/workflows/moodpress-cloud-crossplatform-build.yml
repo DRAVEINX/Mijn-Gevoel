@@ -1,0 +1,158 @@
+name: MoodPress cloud sync — Android, Windows and iOS checks
+
+on:
+  push:
+    branches:
+      - moodpress-cloud-portal-crossplatform
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: moodpress-cloud-platforms-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  windows-client:
+    name: Patch, test and build Windows app
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v7
+
+      - name: Install .NET SDKs
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - name: Extract Windows source archive
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $root = Join-Path $env:RUNNER_TEMP "moodpress-windows-source"
+          New-Item -ItemType Directory -Force -Path $root | Out-Null
+          Expand-Archive -LiteralPath (Join-Path $env:GITHUB_WORKSPACE "MoodPress-Windows-source-2.3.0.zip") -DestinationPath $root -Force
+          python scripts/apply-cloud-platform.py --target windows --source-root $root --repo-root $env:GITHUB_WORKSPACE
+          $projectRoot = Join-Path $root "MoodPress-Windows-source-2.3.0"
+          if (!(Test-Path $projectRoot)) { throw "Windows source project root is missing: $projectRoot" }
+          "MOODPRESS_WINDOWS_ROOT=$projectRoot" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Install MAUI Windows workload
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          dotnet workload install maui-windows
+          if ($LASTEXITCODE -ne 0) { throw "MAUI Windows workload installation failed." }
+
+      - name: Restore and run Core/security tests
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          dotnet test "$env:MOODPRESS_WINDOWS_ROOT\MijnGevoel.Tests\MijnGevoel.Tests.csproj" --configuration Release --warnaserror --logger "console;verbosity=normal"
+          if ($LASTEXITCODE -ne 0) { throw "Windows source Core/security tests failed." }
+
+      - name: Restore and build Windows app with warnings as errors
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $project = Join-Path $env:MOODPRESS_WINDOWS_ROOT "MoodPress.WindowsApp\MoodPress.WindowsApp.csproj"
+          dotnet restore $project
+          if ($LASTEXITCODE -ne 0) { throw "Windows app restore failed." }
+          dotnet build $project --configuration Release --framework net10.0-windows10.0.19041.0 -p:RuntimeIdentifierOverride=win-x64 --warnaserror
+          if ($LASTEXITCODE -ne 0) { throw "Windows cloud-sync app build failed." }
+
+      - name: Publish Windows app
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $project = Join-Path $env:MOODPRESS_WINDOWS_ROOT "MoodPress.WindowsApp\MoodPress.WindowsApp.csproj"
+          $out = Join-Path $env:RUNNER_TEMP "moodpress-windows-cloud-publish"
+          dotnet publish $project --configuration Release --framework net10.0-windows10.0.19041.0 -p:RuntimeIdentifierOverride=win-x64 --self-contained true -p:WindowsPackageType=None -p:WindowsAppSDKSelfContained=true --warnaserror --output $out
+          if ($LASTEXITCODE -ne 0) { throw "Windows cloud-sync publish failed." }
+          if (!(Test-Path (Join-Path $out "MoodPress.exe"))) { throw "MoodPress.exe was not produced." }
+          $count = @(Get-ChildItem $out -Recurse -File).Count
+          if ($count -lt 10) { throw "Windows publish is incomplete: only $count files found." }
+          Compress-Archive -Path (Join-Path $out "*") -DestinationPath (Join-Path $env:GITHUB_WORKSPACE "MoodPress-Windows-CloudSync-Preview.zip") -Force
+
+      - name: Upload Windows preview build
+        uses: actions/upload-artifact@v7
+        with:
+          name: MoodPress-Windows-CloudSync-Preview
+          path: MoodPress-Windows-CloudSync-Preview.zip
+          if-no-files-found: error
+          retention-days: 14
+
+  ios-client:
+    name: Patch, test and build iOS simulator app
+    runs-on: xcode-27
+    timeout-minutes: 90
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v7
+
+      - name: Install .NET SDKs
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.401
+
+      - name: Check Xcode version
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          xcodebuild -version | grep -q 'Xcode 27.0'
+
+      - name: Extract iOS source archive and apply cloud client
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/moodpress-ios-source"
+          mkdir -p "$root"
+          unzip -t MoodPress-iOS-compleet-2.3.2.zip
+          unzip -q MoodPress-iOS-compleet-2.3.2.zip -d "$root"
+          python3 scripts/apply-cloud-platform.py --target ios --source-root "$root" --repo-root "$GITHUB_WORKSPACE"
+          project="$root/MijnGevoel-Android/MijnGevoel.Android/MoodPress.iOS.csproj"
+          test -f "$project"
+          echo "MOODPRESS_IOS_ROOT=$root/MijnGevoel-Android" >> "$GITHUB_ENV"
+          echo "MOODPRESS_IOS_PROJECT=$project" >> "$GITHUB_ENV"
+
+      - name: Install MAUI workload
+        run: dotnet workload install maui --version 10.0.401.1
+
+      - name: Run Core/security tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet test "$MOODPRESS_IOS_ROOT/MijnGevoel.Tests/MijnGevoel.Tests.csproj" --configuration Release --warnaserror --logger "console;verbosity=normal"
+
+      - name: Restore iOS project
+        shell: bash
+        run: dotnet restore "$MOODPRESS_IOS_PROJECT"
+
+      - name: Build iOS simulator app with warnings as errors
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$MOODPRESS_IOS_ROOT/MijnGevoel.Android"
+          if [[ "$(uname -m)" == "arm64" ]]; then RID=iossimulator-arm64; else RID=iossimulator-x64; fi
+          dotnet build MoodPress.iOS.csproj --configuration Debug --framework net10.0-ios -p:RuntimeIdentifier="$RID" -p:EnableCodeSigning=false --warnaserror
+          mkdir -p "$GITHUB_WORKSPACE/artifacts/ios"
+          app="$(find bin/Debug/net10.0-ios -type d -name '*.app' -print -quit)"
+          test -n "$app" || { echo "No iOS Simulator app bundle was produced." >&2; exit 1; }
+          ditto "$app" "$GITHUB_WORKSPACE/artifacts/ios/MoodPress-iOS-CloudSync-Preview.app"
+          ditto -c -k --sequesterRsrc --keepParent "$GITHUB_WORKSPACE/artifacts/ios/MoodPress-iOS-CloudSync-Preview.app" "$GITHUB_WORKSPACE/artifacts/ios/MoodPress-iOS-CloudSync-Preview.zip"
+          shasum -a 256 "$GITHUB_WORKSPACE/artifacts/ios/MoodPress-iOS-CloudSync-Preview.zip" > "$GITHUB_WORKSPACE/artifacts/ios/SHA256SUMS.txt"
+
+      - name: Upload iOS simulator preview build
+        uses: actions/upload-artifact@v7
+        with:
+          name: MoodPress-iOS-CloudSync-Simulator-Preview
+          path: artifacts/ios/*
+          if-no-files-found: error
+          retention-days: 14
