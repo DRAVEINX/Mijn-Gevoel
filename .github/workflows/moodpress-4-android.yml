@@ -122,8 +122,15 @@ jobs:
               out="$RUNNER_TEMP/moodpress-${target}-${format}"
               rm -rf "$out"
               dotnet publish "$project" --configuration Release --framework net10.0-android -p:MoodPressTarget="$target" -warnaserror -p:AndroidPackageFormat="$format" -p:AndroidKeyStore=true "-p:AndroidSigningKeyStore=$RUNNER_TEMP/moodpress-release.keystore" "-p:AndroidSigningKeyAlias=$ANDROID_KEY_ALIAS" "-p:AndroidSigningKeyPass=file:$key_pass_file" "-p:AndroidSigningStorePass=file:$store_pass_file" --output "$out"
-              artifact="$(find "$out" -type f -iname "*.$format" -print -quit)"
+              if [[ "$format" == "aab" ]]; then
+                # dotnet publish emits both unsigned and -Signed AABs; choose only the signed bundle.
+                artifact="$(find "$out" -type f -iname '*-signed.aab' -print -quit)"
+              else
+                artifact="$(find "$out" -type f -iname '*.apk' -print -quit)"
+              fi
               if [[ -z "$artifact" || ! -f "$artifact" ]]; then
+                echo "No signed $format artifact found for $target; generated files:" >&2
+                find "$out" -type f -print || true
                 echo "Geen $format aangetroffen voor $target." >&2
                 find "$out" -type f -print || true
                 exit 1
