@@ -675,6 +675,10 @@ def main() -> int:
         parity_source.replace("__MOODPRESS_NAMESPACE__", namespace), encoding="utf-8"
     )
 
+    # Carry forward the latest routine reminder fields and encrypted support-handoff
+    # schema after syncing the stable Android Core files. These helpers are idempotent.
+    patch_routine_reminder_model(core_dir / "Data" / "Models.cs")
+    patch_support_share_handoff(core_dir / "Data" / "SupportShareService.cs")
     add_vault_validator(core_dir / "Data" / "VaultStore.cs")
     patch_app_session(app_dir)
     patch_dashboard(app_dir)
