@@ -331,7 +331,7 @@ def patch_feature_routing(app_dir: Path, namespace: str, repo_root: Path, core_d
                 "RoutineReminderNotifications.ScheduleOneTime(Android.App.Application.Context, once);",
                 "bool oneTimeScheduled = ScheduleMoodReminder(once);")
             content = content.replace(
-                'status.Text = $"Goed. Je krijgt één herinnering om {when:HH:mm}."; ',
+                'status.Text = $"Goed. Je krijgt één herinnering om {when:HH:mm}.";',
                 'status.Text = oneTimeScheduled ? $"Goed. Je krijgt één herinnering om {when:HH:mm}." : "De keuze is bewaard, maar meldingen worden op dit apparaat niet ondersteund."; ')
 
             helper_marker = "\n}\n\ninternal static class MoodReminderIds"
