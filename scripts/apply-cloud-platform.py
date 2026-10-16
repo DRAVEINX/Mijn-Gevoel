@@ -56,6 +56,22 @@ def sync_shared_core(android_source_root: Path, target_core: Path) -> None:
     print(f"Synced {copied} shared Core files from Android 2.5.2 into {target_core}")
 
 
+def sync_shared_tests(android_source_root: Path, target_tests: Path) -> None:
+    """Use the same Core/security regression suite as Android 2.5.2 on Windows and iOS."""
+    candidates = [android_source_root, android_source_root / "MijnGevoel-Android"]
+    source_tests = next((root / "MijnGevoel.Tests" for root in candidates
+                         if (root / "MijnGevoel.Tests" / "SecurityTests.cs").is_file()), None)
+    if source_tests is None:
+        raise FileNotFoundError(f"Could not find Android 2.5.2 regression tests under {android_source_root}")
+    if not (target_tests / "MijnGevoel.Tests.csproj").is_file():
+        raise FileNotFoundError(f"Target regression test project is missing: {target_tests}")
+    copied = 0
+    for source_file in source_tests.glob("*.cs"):
+        shutil.copy2(source_file, target_tests / source_file.name)
+        copied += 1
+    print(f"Synced {copied} current Android Core/security test files into {target_tests}")
+
+
 def add_vault_validator(vault_file: Path) -> None:
     source = vault_file.read_text(encoding="utf-8")
     fields_marker = "readonly byte[] _key; readonly string _dir;"
@@ -708,6 +724,7 @@ def main() -> int:
 
     app_dir, core_dir = locate_source(args.source_root.resolve(), args.target)
     sync_shared_core(args.android_source_root.resolve(), core_dir)
+    sync_shared_tests(args.android_source_root.resolve(), app_dir.parent / "MijnGevoel.Tests")
     namespace = "MijnGevoel.AndroidApp" if args.target == "ios" else "MoodPress.WindowsApp"
     # Fix the old QRCoder System.Drawing.Common 6 dependency conflicting with MAUI .NET 10.
     core_project = core_dir / "MijnGevoel.Core.csproj"
