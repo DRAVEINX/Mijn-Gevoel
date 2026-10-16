@@ -44,9 +44,12 @@ jobs:
           }
           Write-Host "Using Windows source archive: $archive"
           $sourceRoot = Join-Path $env:RUNNER_TEMP "moodpress-windows-source"
+          $androidRoot = Join-Path $env:RUNNER_TEMP "moodpress-android-current"
           New-Item -ItemType Directory -Force -Path $sourceRoot | Out-Null
+          New-Item -ItemType Directory -Force -Path $androidRoot | Out-Null
           Expand-Archive -LiteralPath $archive -DestinationPath $sourceRoot -Force
-          python scripts/apply-cloud-platform.py --target windows --source-root $sourceRoot --repo-root $env:GITHUB_WORKSPACE
+          Expand-Archive -LiteralPath (Join-Path $env:GITHUB_WORKSPACE "MoodPress-Android-compleet-2.5.2.zip") -DestinationPath $androidRoot -Force
+          python scripts/apply-cloud-platform.py --target windows --source-root $sourceRoot --android-source-root $androidRoot --repo-root $env:GITHUB_WORKSPACE
           if ($LASTEXITCODE -ne 0) { throw "Could not apply the shared encrypted cloud-sync/portal client to the Windows source." }
           $projectRoot = Join-Path $sourceRoot "MoodPress-Windows-source-2.3.0"
           $appProject = Join-Path $projectRoot "MoodPress.WindowsApp\MoodPress.WindowsApp.csproj"
