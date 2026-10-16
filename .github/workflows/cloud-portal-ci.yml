@@ -102,8 +102,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          cp "$GITHUB_WORKSPACE/MoodPress-Android-compleet-2.5.2.zip" platform-source/android-source.zip
+          cp "$GITHUB_WORKSPACE/MoodPress-4.0.0-github.patch" platform-source/android-feature-patch.patch
           cd platform-source
-          zip -qr "$RUNNER_TEMP/moodpress-platform-source-audit.zip" windows ios
+          zip -qr "$RUNNER_TEMP/moodpress-platform-source-audit.zip" windows ios android-source.zip android-feature-patch.patch
       - name: Upload platform source audit bundle
         uses: actions/upload-artifact@v7
         with:
