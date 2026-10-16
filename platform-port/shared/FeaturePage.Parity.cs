@@ -33,7 +33,8 @@ public sealed partial class FeaturePage
         note.MaxLength = 1000;
         var status = AppUi.Label("");
         Guid? editingId = null;
-        var saveButton = AppUi.Button("💾 Welzijn opslaan", SaveWellbeing);
+        Action? saveAction = null;
+        var saveButton = AppUi.Button("💾 Welzijn opslaan", () => saveAction?.Invoke());
         var history = new VerticalStackLayout { Spacing = 8 };
 
         void ResetForm()
@@ -130,6 +131,7 @@ public sealed partial class FeaturePage
             catch (ArgumentException ex) { status.Text = ex.Message; }
         }
 
+        saveAction = SaveWellbeing;
         AddLabel("Slaapkwaliteit (1 = slecht uitgerust, 5 = goed uitgerust)", title: true);
         Add(new HorizontalStackLayout { Spacing = 8, Children = { includeSleep, AppUi.Label("Slaap bijhouden") } });
         Add(sleep); Add(sleepLabel);
