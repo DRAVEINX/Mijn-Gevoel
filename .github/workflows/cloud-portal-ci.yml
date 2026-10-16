@@ -97,6 +97,22 @@ jobs:
           echo '--- IOS MAIN PROJECT TARGET ---'
           sed -n '1,100p' platform-source/ios/MijnGevoel-Android/MijnGevoel.Android/MijnGevoel.Android.csproj
 
+
+      - name: Package extracted source for detailed parity implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd platform-source
+          zip -qr "$RUNNER_TEMP/moodpress-platform-source-audit.zip" windows ios
+      - name: Upload platform source audit bundle
+        uses: actions/upload-artifact@v7
+        with:
+          name: MoodPress-platform-source-audit
+          path: ${{ runner.temp }}/moodpress-platform-source-audit.zip
+          if-no-files-found: error
+          retention-days: 1
+
+
   build-and-smoke-test:
     name: Build and test cloud API / support portal
     runs-on: ubuntu-latest
