@@ -586,6 +586,58 @@ def patch_feature_routing(app_dir: Path, namespace: str, repo_root: Path, core_d
     page.write_text(page_text, encoding="utf-8")
 
 
+def patch_timer_and_routine_progress(app_dir: Path) -> None:
+    """Backfill durable timer state and resumable routine steps into the older platform UI."""
+    page = app_dir / "FeaturePage.cs"
+    source = page.read_text(encoding="utf-8")
+
+    timer_old = "case FeatureKind.Timer: BuildTimer(); break;"
+    timer_new = "case FeatureKind.Timer: BuildTimerParity(); break;"
+    if timer_new not in source:
+        if source.count(timer_old) != 1:
+            raise RuntimeError(f"Could not find exactly one Timer route in {page}")
+        source = source.replace(timer_old, timer_new, 1)
+
+    start_old = "() => { _runningRoutine = routine; _routineStep = 0; ShowRoutineRun(); }"
+    start_new = "() => { _runningRoutine = routine; _routineStep = RoutineRunProgressService.ResumeStep(Store.Load<RoutineRunProgress>(\"routinerunprogress\", routine.Id), routine.Steps.Length); ShowRoutineRun(); }"
+    if "RoutineRunProgressService.ResumeStep(Store.Load<RoutineRunProgress>" not in source:
+        if source.count(start_old) != 1:
+            raise RuntimeError(f"Could not find exactly one routine start action in {page}")
+        source = source.replace(start_old, start_new, 1)
+
+    routine_header = "        if (routine is null) return;\n        _root.Children.Clear();"
+    routine_with_progress = """        if (routine is null) return;
+        if (routine.Steps is null || routine.Steps.Length == 0)
+        {
+            _runningRoutine = null;
+            Build();
+            return;
+        }
+        _routineStep = Math.Clamp(_routineStep, 0, routine.Steps.Length - 1);
+        SaveRoutineRunProgress(routine, _routineStep);
+        _root.Children.Clear();"""
+    if "SaveRoutineRunProgress(routine, _routineStep);" not in source:
+        if source.count(routine_header) != 1:
+            raise RuntimeError(f"Could not find exactly one ShowRoutineRun insertion point in {page}")
+        source = source.replace(routine_header, routine_with_progress, 1)
+
+    completion_old = 'if (_routineStep >= routine.Steps.Length - 1) { await DisplayAlertAsync("Goed gedaan", "Je hebt alle stappen gedaan.", "Klaar"); _runningRoutine = null; Build(); }'
+    completion_new = 'if (_routineStep >= routine.Steps.Length - 1) { SaveRoutineRunProgress(routine, _routineStep, completed: true); await DisplayAlertAsync("Goed gedaan", "Je hebt alle stappen gedaan.", "Klaar"); _runningRoutine = null; Build(); }'
+    if "SaveRoutineRunProgress(routine, _routineStep, completed: true);" not in source:
+        if source.count(completion_old) != 1:
+            raise RuntimeError(f"Could not find exactly one routine completion action in {page}")
+        source = source.replace(completion_old, completion_new, 1)
+
+    stop_old = 'AddButton("Stoppen en terug", () => { _runningRoutine = null; Build(); }, quiet: true);'
+    stop_new = 'AddButton("Stoppen en terug", () => { SaveRoutineRunProgress(routine, _routineStep); _runningRoutine = null; Build(); }, quiet: true);'
+    if stop_new not in source:
+        if source.count(stop_old) != 1:
+            raise RuntimeError(f"Could not find exactly one routine stop action in {page}")
+        source = source.replace(stop_old, stop_new, 1)
+
+    page.write_text(source, encoding="utf-8")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--target", choices=("ios", "windows"), required=True)
@@ -683,6 +735,7 @@ def main() -> int:
     patch_app_session(app_dir)
     patch_dashboard(app_dir)
     patch_feature_routing(app_dir, namespace, args.repo_root.resolve(), core_dir)
+    patch_timer_and_routine_progress(app_dir)
     # Validate the full accessible journal insertion, including platform-specific delete flows.
     patch_journal_draft_and_dictation(app_dir, args.target)
 
