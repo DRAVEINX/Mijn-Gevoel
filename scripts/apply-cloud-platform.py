@@ -31,6 +31,31 @@ def locate_source(source_root: Path, target: str) -> tuple[Path, Path]:
         "Check the extracted source archive layout."
     )
 
+def sync_shared_core(android_source_root: Path, target_core: Path) -> None:
+    """Bring shared Windows/iOS Core code forward to the Android 2.5.2 baseline."""
+    candidates = [android_source_root, android_source_root / "MijnGevoel-Android"]
+    source_core = next((root / "MijnGevoel.Core" for root in candidates if (root / "MijnGevoel.Core").is_dir()), None)
+    if source_core is None:
+        raise FileNotFoundError(
+            f"Could not find MijnGevoel.Core beneath Android source root {android_source_root}. "
+            "Extract MoodPress-Android-compleet-2.5.2.zip and pass its parent directory."
+        )
+    copied = 0
+    for subdirectory in ("Data", "Security"):
+        source_directory = source_core / subdirectory
+        target_directory = target_core / subdirectory
+        if not source_directory.is_dir() or not target_directory.is_dir():
+            raise FileNotFoundError(f"Shared Core directory missing: {source_directory} or {target_directory}")
+        source_files = {path.name for path in source_directory.glob("*.cs")}
+        for source_file in source_directory.glob("*.cs"):
+            shutil.copy2(source_file, target_directory / source_file.name)
+            copied += 1
+        for target_file in target_directory.glob("*.cs"):
+            if target_file.name not in source_files:
+                target_file.unlink()
+    print(f"Synced {copied} shared Core files from Android 2.5.2 into {target_core}")
+
+
 def add_vault_validator(vault_file: Path) -> None:
     source = vault_file.read_text(encoding="utf-8")
     fields_marker = "readonly byte[] _key; readonly string _dir;"
@@ -483,7 +508,7 @@ def patch_feature_routing(app_dir: Path, namespace: str, repo_root: Path, core_d
     features = [
         "CommunicationBoard", "ReadAloud", "RoutineMedia", "MoodReminders",
         "DifficultMomentPlan", "SecureSync", "SupportPermissions", "SupportHandoff",
-        "BackupHealth", "AccessibilityAudit"
+        "BackupHealth", "AccessibilityAudit", "Wellbeing"
     ]
     if any(f"FeatureKind.{kind}" not in dashboard_text for kind in features):
         enum_match = re.search(r"(public enum FeatureKind\s*\{)(.*?)(\})", dashboard_text, re.S)
@@ -510,7 +535,8 @@ def patch_feature_routing(app_dir: Path, namespace: str, repo_root: Path, core_d
         '("Toestemming begeleiders", "👥", FeatureKind.SupportPermissions)',
         '("Overdracht naar begeleider", "📨", FeatureKind.SupportHandoff)',
         '("Back-upcontrole", "🛡️", FeatureKind.BackupHealth)',
-        '("Toegankelijkheidscontrole", "♿", FeatureKind.AccessibilityAudit)'
+        '("Toegankelijkheidscontrole", "♿", FeatureKind.AccessibilityAudit)',
+        '("Mijn welzijn", "💚", FeatureKind.Wellbeing)'
     ]
     if "FeatureKind.CommunicationBoard)" not in dashboard_text.split("public DashboardPage", 1)[0]:
         pass
@@ -525,6 +551,7 @@ def patch_feature_routing(app_dir: Path, namespace: str, repo_root: Path, core_d
     page_text = page.read_text(encoding="utf-8")
     route_anchor = "            case FeatureKind.Settings: BuildSettings(); break;"
     feature_cases = """            case FeatureKind.CommunicationBoard: BuildCommunicationBoard(); break;
+            case FeatureKind.Wellbeing: BuildWellbeing(); break;
             case FeatureKind.ReadAloud: BuildReadAloud(); break;
             case FeatureKind.RoutineMedia: BuildRoutineMedia(); break;
             case FeatureKind.MoodReminders: BuildMoodReminders(); break;
@@ -550,6 +577,7 @@ def patch_feature_routing(app_dir: Path, namespace: str, repo_root: Path, core_d
         FeatureKind.SupportHandoff => "Overdracht naar begeleider",
         FeatureKind.BackupHealth => "Back-upcontrole",
         FeatureKind.AccessibilityAudit => "Toegankelijkheidscontrole",
+        FeatureKind.Wellbeing => "Mijn welzijn",
         FeatureKind.Settings => "Instellingen", _ => "Hulp" """
     if "FeatureKind.CommunicationBoard =>" not in page_text:
         if page_text.count(title_anchor) != 1:
@@ -563,9 +591,11 @@ def main() -> int:
     parser.add_argument("--target", choices=("ios", "windows"), required=True)
     parser.add_argument("--source-root", required=True, type=Path)
     parser.add_argument("--repo-root", required=True, type=Path)
+    parser.add_argument("--android-source-root", required=True, type=Path)
     args = parser.parse_args()
 
     app_dir, core_dir = locate_source(args.source_root.resolve(), args.target)
+    sync_shared_core(args.android_source_root.resolve(), core_dir)
     namespace = "MijnGevoel.AndroidApp" if args.target == "ios" else "MoodPress.WindowsApp"
     # Fix the old QRCoder System.Drawing.Common 6 dependency conflicting with MAUI .NET 10.
     core_project = core_dir / "MijnGevoel.Core.csproj"
@@ -635,6 +665,16 @@ def main() -> int:
         destination = app_dir / name
         destination.write_text(source.replace("__MOODPRESS_NAMESPACE__", namespace), encoding="utf-8")
 
+    parity_path = repo_root / "platform-port" / "shared" / "FeaturePage.Parity.cs"
+    if not parity_path.is_file():
+        raise FileNotFoundError(f"Shared parity UI source is missing: {parity_path}")
+    parity_source = parity_path.read_text(encoding="utf-8")
+    if "__MOODPRESS_NAMESPACE__" not in parity_source:
+        raise RuntimeError(f"Namespace placeholder is missing from {parity_path}")
+    (app_dir / "FeaturePage.Parity.cs").write_text(
+        parity_source.replace("__MOODPRESS_NAMESPACE__", namespace), encoding="utf-8"
+    )
+
     add_vault_validator(core_dir / "Data" / "VaultStore.cs")
     patch_app_session(app_dir)
     patch_dashboard(app_dir)
@@ -649,6 +689,7 @@ def main() -> int:
         core_dir / "Data" / "VaultStore.cs",
         app_dir / "AppSession.cs",
         app_dir / "DashboardPage.cs",
+        app_dir / "FeaturePage.Parity.cs",
     ]
     for path in required:
         if not path.is_file():
