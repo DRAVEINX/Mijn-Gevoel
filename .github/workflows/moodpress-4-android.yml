@@ -44,6 +44,30 @@ jobs:
           grep -q '<ApplicationVersion>35</ApplicationVersion>' MijnGevoel.Android/MijnGevoel.Android.csproj
           echo "MoodPress 4.0 source patch applied and static checks passed."
 
+      - name: Controleer cloudsync en ouder-/begeleidersportaal in Android-broncode
+        shell: bash
+        run: |
+          set -euo pipefail
+          app="source/MijnGevoel-Android/MijnGevoel.Android"
+          test -f "$app/CloudSyncClient.cs"
+          test -f "$app/CloudArchiveMerger.cs"
+          test -f "$app/FeaturePage.CloudSync.cs"
+          grep -q 'TryAutoSyncAsync' "$app/AppSession.cs"
+          grep -q '/api/v1/auth/register' "$app/CloudSyncClient.cs"
+          grep -q '/api/v1/auth/login' "$app/CloudSyncClient.cs"
+          grep -q '/api/v1/sync' "$app/CloudSyncClient.cs"
+          grep -q '/api/v1/support/invitations' "$app/CloudSyncClient.cs"
+          grep -q '/api/v1/support/shares' "$app/CloudSyncClient.cs"
+          grep -q '/api/v1/support/suggestions' "$app/CloudSyncClient.cs"
+          grep -q 'SecureStorage' "$app/CloudSyncClient.cs"
+          echo "Android bevat de versleutelde cloudsynchronisatieclient, automatische sync, beveiligde sessieopslag en API-koppelingen voor accounts en begeleiders."
+
+      - name: Bouw het bijbehorende onlineportaal en de cloud-API
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet build cloud/MoodPress.CloudPortal.csproj --configuration Release --warnaserror
+
       - name: Installeer .NET SDK 8 en 10
         uses: actions/setup-dotnet@v6
         with:
