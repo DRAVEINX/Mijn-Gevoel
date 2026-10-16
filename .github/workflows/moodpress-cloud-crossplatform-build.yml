@@ -105,8 +105,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          xcodebuild -version
-          xcodebuild -version | grep -q 'Xcode 27.0'
+          version="$(xcodebuild -version)"
+          printf '%s\n' "$version"
+          printf '%s\n' "$version" | grep -q 'Xcode 27.0'
 
       - name: Extract iOS source archive and apply cloud client
         shell: bash
