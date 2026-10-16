@@ -639,7 +639,7 @@ def main() -> int:
     patch_app_session(app_dir)
     patch_dashboard(app_dir)
     patch_feature_routing(app_dir, namespace, args.repo_root.resolve(), core_dir)
-    # Journal, typed text, recorded audio and speech-to-text must be available on both desktop and iPhone.
+    # Validate the lifecycle insertion against the new patcher in the current commit.
     patch_journal_draft_and_dictation(app_dir, args.target)
 
     required = [
