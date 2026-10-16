@@ -197,6 +197,14 @@ def main() -> int:
 
     app_dir, core_dir = locate_source(args.source_root.resolve(), args.target)
     namespace = "MijnGevoel.AndroidApp" if args.target == "ios" else "MoodPress.WindowsApp"
+    # Fix the old QRCoder System.Drawing.Common 6 dependency conflicting with MAUI .NET 10.
+    core_project = core_dir / "MijnGevoel.Core.csproj"
+    core_project_text = core_project.read_text(encoding="utf-8")
+    qrcoder_pattern = re.compile(r'(<PackageReference\s+Include="QRCoder"\s+Version=")[^"]+("\s*/>)')
+    core_project_text, qrcoder_count = qrcoder_pattern.subn(r'\g<1>1.8.1\g<2>', core_project_text, count=1)
+    if qrcoder_count != 1:
+        raise RuntimeError(f"Could not update QRCoder dependency in {core_project}")
+    core_project.write_text(core_project_text, encoding="utf-8")
     shared = args.repo_root.resolve() / "platform-port" / "shared"
     for name in ("CloudSyncClient.cs", "CloudArchiveMerger.cs", "CloudSyncPage.cs"):
         source_path = shared / name

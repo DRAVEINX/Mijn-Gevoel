@@ -144,7 +144,7 @@ jobs:
           if [[ "$(uname -m)" == "arm64" ]]; then RID=iossimulator-arm64; else RID=iossimulator-x64; fi
           dotnet build MoodPress.iOS.csproj --configuration Debug --framework net10.0-ios -p:RuntimeIdentifier="$RID" -p:EnableCodeSigning=false --warnaserror
           mkdir -p "$GITHUB_WORKSPACE/artifacts/ios"
-          app="$(find bin/Debug/net10.0-ios -type d -name '*.app' -print -quit)"
+          app="$(find bin-ios/Debug/net10.0-ios -type d -name '*.app' -print -quit)"
           test -n "$app" || { echo "No iOS Simulator app bundle was produced." >&2; exit 1; }
           ditto "$app" "$GITHUB_WORKSPACE/artifacts/ios/MoodPress-iOS-CloudSync-Preview.app"
           ditto -c -k --sequesterRsrc --keepParent "$GITHUB_WORKSPACE/artifacts/ios/MoodPress-iOS-CloudSync-Preview.app" "$GITHUB_WORKSPACE/artifacts/ios/MoodPress-iOS-CloudSync-Preview.zip"
