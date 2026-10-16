@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Haal de aparte build-branch op
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Controleer en patch de bestaande MoodPress 2.5.2-broncode
         shell: bash
@@ -40,14 +40,14 @@ jobs:
           echo "MoodPress 4.0 source patch applied and static checks passed."
 
       - name: Installeer .NET SDK 8 en 10
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: |
             8.0.x
             10.0.x
 
       - name: Installeer Java 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: microsoft
           java-version: '17'
@@ -110,6 +110,7 @@ jobs:
                 --configuration Release \
                 --framework net10.0-android \
                 -p:MoodPressTarget="$target" \
+                "-warnaserror:CS8765;CS0618;CS1587" \
                 -p:AndroidPackageFormat="$format" \
                 -p:AndroidKeyStore=true \
                 "-p:AndroidSigningKeyStore=$RUNNER_TEMP/moodpress-release.keystore" \
@@ -163,7 +164,7 @@ jobs:
 
       - name: Upload MoodPress 4.0-releasebestanden
         if: steps.signing.outputs.ready == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: MoodPress-4.0.0-Android-Phone-Tablet-Release
           path: artifacts/*
@@ -172,7 +173,7 @@ jobs:
 
       - name: Upload MoodPress 4.0-debugbestanden
         if: steps.signing.outputs.ready != 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: MoodPress-4.0.0-Android-Phone-Tablet-Debug
           path: artifacts/*
