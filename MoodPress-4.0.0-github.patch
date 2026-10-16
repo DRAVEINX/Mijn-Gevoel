@@ -2321,11 +2321,22 @@ diff -ruN moodpress_base_flat/MijnGevoel.Core/Data/SupportShareService.cs moodpr
 diff -ruN moodpress_base_flat/MijnGevoel.Core/Data/VaultStore.cs moodpress4_build/MijnGevoel.Core/Data/VaultStore.cs
 --- moodpress_base_flat/MijnGevoel.Core/Data/VaultStore.cs	2026-10-15 06:30:40.000000000 +0000
 +++ moodpress4_build/MijnGevoel.Core/Data/VaultStore.cs	2026-10-16 11:04:31.000000000 +0000
-@@ -30,0 +31,54 @@
+@@ -30,0 +31,65 @@
 +    const int CloudSnapshotHeaderLength = 36;
 +    const int MaxCloudSnapshotBytes = 100 * 1024 * 1024;
 +    static readonly byte[] CloudSnapshotMagic = "MPCLOUD1"u8.ToArray();
 +    static readonly byte[] CloudSnapshotAad = "MoodPress cloud snapshot v1"u8.ToArray();
++
++    /// <summary>Returns a stable, non-reversible identifier for this active high-entropy vault key.</summary>
++    public string GetStableCloudVaultId()
++    {
++        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
++        hash.AppendData("MoodPress cloud vault identity v1"u8);
++        hash.AppendData(_key);
++        var digest = hash.GetHashAndReset();
++        try { return Convert.ToHexString(digest); }
++        finally { CryptographicOperations.ZeroMemory(digest); }
++    }
 +
 +    /// <summary>Encrypts an entire backup envelope with the active vault key before sending it to cloud storage.</summary>
 +    public byte[] EncryptCloudSnapshot(byte[] plaintext)
@@ -2376,7 +2387,7 @@ diff -ruN moodpress_base_flat/MijnGevoel.Core/Data/VaultStore.cs moodpress4_buil
 +        }
 +    }
 +
-@@ -72,6 +126,31 @@
+@@ -72,6 +137,31 @@
          }
      }
  
@@ -3096,7 +3107,7 @@ diff -ruN moodpress_base_flat/scripts/check-moodpress-4.sh moodpress4_build/scri
 diff -ruN moodpress_base_flat/MijnGevoel.Android/CloudSyncClient.cs moodpress4_build/MijnGevoel.Android/CloudSyncClient.cs
 --- moodpress_base_flat/MijnGevoel.Android/CloudSyncClient.cs	1970-01-01 00:00:00.000000000 +0000
 +++ moodpress4_build/MijnGevoel.Android/CloudSyncClient.cs	2026-10-16 14:30:00.000000000 +0000
-@@ -0,0 +1,399 @@
+@@ -0,0 +1,401 @@
 +using System.Net;
 +using System.Net.Http.Headers;
 +using System.Net.Http.Json;
@@ -3207,8 +3218,10 @@ diff -ruN moodpress_base_flat/MijnGevoel.Android/CloudSyncClient.cs moodpress4_b
 +            if (string.IsNullOrWhiteSpace(endpoint) || string.IsNullOrWhiteSpace(token) || string.IsNullOrWhiteSpace(workspace))
 +                throw new InvalidOperationException("Koppel eerst je beveiligde MoodPress-cloudaccount in dit scherm.");
 +
-+            var vaultId = Path.GetFileNameWithoutExtension(AppSession.Accounts.AccountFilePath(AppSession.Username));
-+            if (vaultId.Length != 64 || vaultId.Any(c => !Uri.IsHexDigit(c)))
++            var accountPathId = Path.GetFileNameWithoutExtension(AppSession.Accounts.AccountFilePath(AppSession.Username));
++            var vaultId = AppSession.Store.GetStableCloudVaultId();
++            if (accountPathId.Length != 64 || accountPathId.Any(c => !Uri.IsHexDigit(c)) ||
++                vaultId.Length != 64 || vaultId.Any(c => !Uri.IsHexDigit(c)))
 +                throw new InvalidDataException("De lokale kluis-ID kan niet veilig worden vastgesteld.");
 +
 +            var localZip = NewTempPath("local");
@@ -3269,7 +3282,7 @@ diff -ruN moodpress_base_flat/MijnGevoel.Android/CloudSyncClient.cs moodpress4_b
 +            if (!merge.Success)
 +                throw new CloudSyncConflictException("Er zijn wijzigingen op beide apparaten in hetzelfde item. Er is niets overschreven. Conflicterende items: " + string.Join(", ", merge.Conflicts.Take(5)));
 +
-+            var remoteFingerprint = CloudArchiveMerger.ContentFingerprint(remoteZip, AppSession.Store, vaultId);
++            var remoteFingerprint = CloudArchiveMerger.ContentFingerprint(remoteZip, AppSession.Store, accountPathId);
 +            var uploadVersion = remote.Version;
 +            EnsureArchiveSize(mergedZip);
 +            var mergedBytes = await File.ReadAllBytesAsync(mergedZip, cancellationToken);
