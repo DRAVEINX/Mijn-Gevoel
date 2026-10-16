@@ -659,7 +659,7 @@ def patch_timer_and_routine_progress(app_dir: Path) -> None:
     # Newer Android BuildRoutines already restores progress; retain a fallback for older archives.
     if "RoutineRunProgressService.ResumeStep(progress, routine.Steps.Length)" not in source:
         start_old = "() => { _runningRoutine = routine; _routineStep = 0; ShowRoutineRun(); }"
-        start_new = "() => { _runningRoutine = routine; _routineStep = RoutineRunProgressService.ResumeStep(Store.Load<RoutineRunProgress>(\\"routinerunprogress\\", routine.Id), routine.Steps.Length); ShowRoutineRun(); }"
+        start_new = '() => { _runningRoutine = routine; _routineStep = RoutineRunProgressService.ResumeStep(Store.Load<RoutineRunProgress>("routinerunprogress", routine.Id), routine.Steps.Length); ShowRoutineRun(); }'
         if source.count(start_old) != 1:
             raise RuntimeError(f"Could not find exactly one routine start action in {page}")
         source = source.replace(start_old, start_new, 1)
