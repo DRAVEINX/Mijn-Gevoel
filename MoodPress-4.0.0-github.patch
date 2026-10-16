@@ -214,7 +214,7 @@ diff -ruN moodpress_base_flat/MijnGevoel.Android/FeatureCatalog.cs moodpress4_bu
          new(FeatureKind.Help, "Hulp", "❓", "Profiel, privacy en hulp", "Lees uitleg over de app.")
 diff -ruN moodpress_base_flat/MijnGevoel.Android/FeaturePage.MoodPress40.cs moodpress4_build/MijnGevoel.Android/FeaturePage.MoodPress40.cs
 --- moodpress_base_flat/MijnGevoel.Android/FeaturePage.MoodPress40.cs	1970-01-01 00:00:00.000000000 +0000
-+++ moodpress4_build/MijnGevoel.Android/FeaturePage.MoodPress40.cs	2026-10-16 11:08:07.000000000 +0000
++++ moodpress4_build/MijnGevoel.Android/FeaturePage.MoodPress40.cs	2026-10-16 11:25:39.050247038 +0000
 @@ -0,0 +1,945 @@
 +using System.Globalization;
 +using System.IO.Compression;
@@ -721,11 +721,11 @@ diff -ruN moodpress_base_flat/MijnGevoel.Android/FeaturePage.MoodPress40.cs mood
 +            int mask = dayChecks.Where(x => x.Value.IsChecked).Aggregate(0, (m, x) => m | (1 << (int)x.Key));
 +            if (enabled.IsToggled && mask == 0) { status.Text = "Kies ten minste één dag of zet de herinnering uit."; return; }
 +            if (respectQuiet.IsToggled && quietStart.Time == quietEnd.Time) { status.Text = "Kies verschillende tijden voor het begin en einde van de rustige periode."; return; }
-+            var item = new RoutineReminder(id, "Hoe voel ik me?", "💛", time.Time.ToString(@"hh\:mm"), mask, enabled.IsToggled, null, sound.IsToggled)
++            var item = new RoutineReminder(id, "Hoe voel ik me?", "💛", time.Time?.ToString(@"hh\:mm", CultureInfo.InvariantCulture) ?? "00:00", mask, enabled.IsToggled, null, sound.IsToggled)
 +            {
 +                RespectQuietHours = respectQuiet.IsToggled,
-+                QuietStart = quietStart.Time.ToString(@"hh\:mm", CultureInfo.InvariantCulture),
-+                QuietEnd = quietEnd.Time.ToString(@"hh\:mm", CultureInfo.InvariantCulture)
++                QuietStart = quietStart.Time?.ToString(@"hh\:mm", CultureInfo.InvariantCulture) ?? "00:00",
++                QuietEnd = quietEnd.Time?.ToString(@"hh\:mm", CultureInfo.InvariantCulture) ?? "00:00"
 +            };
 +            Store.Save("routinereminder", id, item);
 +            bool permitted = !enabled.IsToggled || await RoutineReminderNotifications.EnsurePermissionAsync();
@@ -1033,7 +1033,7 @@ diff -ruN moodpress_base_flat/MijnGevoel.Android/FeaturePage.MoodPress40.cs mood
 +            int mask = reminderDays.Where(x => x.Value.IsChecked).Aggregate(0, (value, x) => value | (1 << (int)x.Key));
 +            if (reminderEnabled.IsToggled && mask == 0) { reminderStatus.Text = "Kies minstens één dag of zet de herinnering uit."; return; }
 +            bool permitted = !reminderEnabled.IsToggled || await RoutineReminderNotifications.EnsurePermissionAsync();
-+            var reminder = new RoutineReminder(backupReminderId, "Tijd om een MoodPress-back-up te maken", "🛡️", reminderTime.Time.ToString(@"hh\:mm", CultureInfo.InvariantCulture), mask, reminderEnabled.IsToggled, null, false);
++            var reminder = new RoutineReminder(backupReminderId, "Tijd om een MoodPress-back-up te maken", "🛡️", reminderTime.Time?.ToString(@"hh\:mm", CultureInfo.InvariantCulture) ?? "00:00", mask, reminderEnabled.IsToggled, null, false);
 +            Store.Save("routinereminder", backupReminderId, reminder);
 +            RoutineReminderNotifications.Sync(Android.App.Application.Context, Store.All<RoutineReminder>("routinereminder"));
 +            reminderStatus.Text = !reminderEnabled.IsToggled ? "Back-upherinnering staat uit." : permitted ? $"Je krijgt op de gekozen dagen om {reminder.Time} een herinnering." : "De instelling is bewaard, maar Android-meldingen zijn niet toegestaan.";
