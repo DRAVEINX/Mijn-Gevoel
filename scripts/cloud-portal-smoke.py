@@ -7,6 +7,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from pathlib import Path
 
 BASE = os.environ.get("MOODPRESS_TEST_URL", "http://127.0.0.1:5080").rstrip("/")
 
@@ -51,9 +52,21 @@ def register(tag):
 
 def main():
     wait_ready()
+    # Keep the mobile patch and the desktop/iOS shared client aligned on first-sync semantics.
+    repo_root = Path(__file__).resolve().parent.parent
+    for source_path in (
+        repo_root / "platform-port" / "shared" / "CloudSyncClient.cs",
+        repo_root / "MoodPress-4.0.0-github.patch",
+    ):
+        if 'Contains("geen cloudsnapshot"' not in source_path.read_text(encoding="utf-8"):
+            raise AssertionError(f"{source_path.name} must accept an empty cloud workspace on first sync")
+
     owner_email, owner = register("owner")
     owner_token = owner["accessToken"]
     owner_workspace = request("/api/v1/me", token=owner_token)["workspaces"][0]["id"]
+
+    missing_snapshot = request("/api/v1/sync", token=owner_token, workspace=owner_workspace, expected=(404,))
+    assert "geen cloudsnapshot" in missing_snapshot["error"].lower(), missing_snapshot
 
     # The server stores arbitrary opaque bytes; the API must not inspect or decrypt a vault backup.
     archive = b"opaque-encrypted-test-archive-" + secrets.token_bytes(64)

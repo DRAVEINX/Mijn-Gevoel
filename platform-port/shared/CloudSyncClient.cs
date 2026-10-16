@@ -226,7 +226,7 @@ public static class CloudSyncClient
         if (response.StatusCode == HttpStatusCode.NotFound)
         {
             var raw = await response.Content.ReadAsStringAsync(cancellationToken);
-            if (raw.Contains("Er is nog geen cloudsnapshot", StringComparison.OrdinalIgnoreCase)) return null;
+            if (raw.Contains("geen cloudsnapshot", StringComparison.OrdinalIgnoreCase)) return null;
             throw new InvalidOperationException(ExtractError(raw, response.StatusCode));
         }
         return await ReadResponseAsync<SnapshotDto>(response, cancellationToken);
