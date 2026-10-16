@@ -586,6 +586,42 @@ def patch_feature_routing(app_dir: Path, namespace: str, repo_root: Path, core_d
     page.write_text(page_text, encoding="utf-8")
 
 
+def extract_csharp_method(source: str, method_name: str) -> tuple[int, int, str]:
+    """Find a top-level C# void method by balanced braces and return its source span."""
+    pattern = re.compile(rf"(?m)^    void {re.escape(method_name)}\s*\([^\n]*\)\s*\{{")
+    match = pattern.search(source)
+    if not match:
+        raise RuntimeError(f"Could not find method {method_name} in C# source")
+    opening = source.find("{", match.start(), match.end())
+    depth = 0
+    for index in range(opening, len(source)):
+        if source[index] == "{":
+            depth += 1
+        elif source[index] == "}":
+            depth -= 1
+            if depth == 0:
+                return match.start(), index + 1, source[match.start():index + 1]
+    raise RuntimeError(f"Unbalanced braces while reading method {method_name}")
+
+
+def sync_portable_feature_methods(android_source_root: Path, app_dir: Path) -> None:
+    """Port newer platform-neutral UI methods from Android 2.5.2 without replacing platform-specific pages."""
+    candidates = [android_source_root, android_source_root / "MijnGevoel-Android"]
+    android_app = next((root / "MijnGevoel.Android" for root in candidates
+                        if (root / "MijnGevoel.Android" / "FeaturePage.cs").is_file()), None)
+    if android_app is None:
+        raise FileNotFoundError(f"Could not find Android FeaturePage.cs under {android_source_root}")
+    source = (android_app / "FeaturePage.cs").read_text(encoding="utf-8")
+    target_path = app_dir / "FeaturePage.cs"
+    target = target_path.read_text(encoding="utf-8")
+    for method_name in ("BuildAgenda", "BuildDay", "BuildRoutines", "BuildAdultPlanning"):
+        _, _, modern_method = extract_csharp_method(source, method_name)
+        start, end, _ = extract_csharp_method(target, method_name)
+        target = target[:start] + modern_method + target[end:]
+        print(f"Ported {method_name} from Android 2.5.2 into {app_dir.name}")
+    target_path.write_text(target, encoding="utf-8")
+
+
 def patch_timer_and_routine_progress(app_dir: Path) -> None:
     """Backfill durable timer state and resumable routine steps into the older platform UI."""
     page = app_dir / "FeaturePage.cs"
@@ -742,6 +778,7 @@ def main() -> int:
     patch_app_session(app_dir)
     patch_dashboard(app_dir)
     patch_feature_routing(app_dir, namespace, args.repo_root.resolve(), core_dir)
+    sync_portable_feature_methods(args.android_source_root.resolve(), app_dir)
     patch_timer_and_routine_progress(app_dir)
     # Validate the full accessible journal insertion, including platform-specific delete flows.
     patch_journal_draft_and_dictation(app_dir, args.target)
