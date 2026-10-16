@@ -114,7 +114,7 @@ jobs:
                 --configuration Release \
                 --framework net10.0-android \
                 -p:MoodPressTarget="$target" \
-                "-warnaserror:CS8765;CS0618;CS1587" \
+                -warnaserror \
                 -p:AndroidPackageFormat="$format" \
                 -p:AndroidKeyStore=true \
                 "-p:AndroidSigningKeyStore=$RUNNER_TEMP/moodpress-release.keystore" \
