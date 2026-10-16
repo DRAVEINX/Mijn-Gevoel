@@ -3914,3 +3914,102 @@ diff -ruN moodpress_base_flat/MijnGevoel.Core/MijnGevoel.Core.csproj moodpress4_
 +    <PackageReference Include="QRCoder" Version="1.8.1" />
    </ItemGroup>
  </Project>
+--- a/MijnGevoel.Android/MorePage.cs
++++ b/MijnGevoel.Android/MorePage.cs
+@@ -14,6 +14,7 @@
+     bool _hasRendered;
+     bool _isRendering;
+     bool _renderFailed;
++    bool _openingFeature;
+ 
+     public MorePage()
+     {
+@@ -139,8 +140,9 @@
+         _results.Children.Clear();
+         var query = (_search.Text ?? string.Empty).Trim();
+         var all = FeatureCatalog.All;
+-        var matches = all.Where(item => item.Kind == FeatureKind.Settings || FeatureVisibilityService.IsEnabled(AppSession.Settings, item.Kind.ToString()))
+-            .Where(item => string.IsNullOrWhiteSpace(query)
++        // This page is the complete function directory. Home visibility settings must not
++        // hide features here; otherwise older saved preferences can make most of the app vanish.
++        var matches = all.Where(item => string.IsNullOrWhiteSpace(query)
+                 || item.Label.Contains(query, StringComparison.CurrentCultureIgnoreCase)
+                 || item.Group.Contains(query, StringComparison.CurrentCultureIgnoreCase)
+                 || item.Description.Contains(query, StringComparison.CurrentCultureIgnoreCase))
+@@ -220,6 +222,10 @@
+     async Task OpenFeatureAsync(FeatureKind kind)
+     {
++        // Ignore double taps while MAUI is still pushing the target page. Overlapping
++        // PushAsync operations can leave a stale page on top or make navigation appear to reset.
++        if (_openingFeature) return;
++        _openingFeature = true;
+         AppSession.Touch();
+         try
+         {
+@@ -232,6 +238,14 @@
+                 default: await Navigation.PushAsync(new FeaturePage(kind)); break;
+             }
+         }
+-        catch (Exception ex) { AppLog.Write(ex); await DisplayAlertAsync("Functie niet geopend", "Probeer het nogmaals. Als dit blijft gebeuren, meld het via feedback.", "OK"); }
++        catch (Exception ex)
++        {
++            AppLog.Write(ex);
++            await DisplayAlertAsync("Functie niet geopend", "Probeer het nogmaals. Je opgeslagen gegevens zijn niet gewijzigd.", "OK");
++        }
++        finally
++        {
++            _openingFeature = false;
++        }
+     }
+ }
+--- a/MijnGevoel.Android/AppUi.cs
++++ b/MijnGevoel.Android/AppUi.cs
+@@ -6,6 +6,10 @@
+ 
+ internal static class AppUi
+ {
++    // Only one bottom-tab transition may mutate the NavigationPage stack at a time.
++    // This protects phone and tablet from overlapping PopAsync/PushAsync operations on rapid taps.
++    static int _bottomTabNavigationInProgress;
++
+     static Page? ActivePage
+     {
+         get
+@@ -355,9 +359,10 @@
+         SemanticProperties.SetHint(b, selected ? $"{accessibleLabel} is geopend." : $"Open {accessibleLabel}.");
+         b.Clicked += async (_, _) =>
+         {
+-            AppSession.Touch();
++            if (Interlocked.Exchange(ref _bottomTabNavigationInProgress, 1) != 0) return;
+             try
+             {
++                AppSession.Touch();
+                 // Do not rebuild the exact root page of the tab being tapped; this avoids
+                 // duplicate pages and preserves any currently visible form values.
+                 if ((target == "home" && host is DashboardPage)
+@@ -393,6 +398,10 @@
+                 }
+                 catch { /* Navigatiefout moet de rest van de app niet laten crashen. */ }
+             }
++            finally
++            {
++                Interlocked.Exchange(ref _bottomTabNavigationInProgress, 0);
++            }
+         };
+         tabs.Add(b, column, 0);
+     }
+--- a/scripts/check-moodpress-4.sh
++++ b/scripts/check-moodpress-4.sh
+@@ -20,6 +20,16 @@
+ grep -q 'width >= 840' "MijnGevoel.Android/DashboardPage.cs"
+ grep -q 'AndroidPackageFormat' "$workflow"
+ 
++# Navigation regressions: the full catalogue remains discoverable regardless of Home shortcuts,
++# and rapid bottom-tab taps cannot race PopAsync/PushAsync on phones or tablets.
++more="MijnGevoel.Android/MorePage.cs"
++tabs="MijnGevoel.Android/AppUi.cs"
++test -f "$more" && test -f "$tabs"
++grep -q 'var matches = all.Where(item => string.IsNullOrWhiteSpace(query)' "$more"
++grep -q 'bool _openingFeature;' "$more"
++grep -q 'Interlocked.Exchange(ref _bottomTabNavigationInProgress, 1)' "$tabs"
++grep -q 'Interlocked.Exchange(ref _bottomTabNavigationInProgress, 0)' "$tabs"
