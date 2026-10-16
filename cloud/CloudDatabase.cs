@@ -92,6 +92,7 @@ public sealed class CloudDatabase
                 workspace_id TEXT PRIMARY KEY REFERENCES workspaces(id) ON DELETE CASCADE,
                 version INTEGER NOT NULL,
                 sha256 TEXT NOT NULL,
+                vault_id TEXT NOT NULL DEFAULT '',
                 encrypted_archive BLOB NOT NULL,
                 updated_at TEXT NOT NULL,
                 updated_by TEXT NOT NULL REFERENCES users(id),
@@ -123,5 +124,22 @@ public sealed class CloudDatabase
             CREATE INDEX IF NOT EXISTS ix_suggestions_workspace ON support_suggestions(workspace_id, status, created_at);
             """;
         await command.ExecuteNonQueryAsync(cancellationToken);
+
+        // Migrate databases created by an earlier preview without dropping their snapshots.
+        await using var columns = connection.CreateCommand();
+        columns.CommandText = "PRAGMA table_info(sync_snapshots);";
+        var hasVaultId = false;
+        await using (var reader = await columns.ExecuteReaderAsync(cancellationToken))
+        {
+            while (await reader.ReadAsync(cancellationToken))
+                if (string.Equals(reader.GetString(1), "vault_id", StringComparison.OrdinalIgnoreCase))
+                    hasVaultId = true;
+        }
+        if (!hasVaultId)
+        {
+            await using var migration = connection.CreateCommand();
+            migration.CommandText = "ALTER TABLE sync_snapshots ADD COLUMN vault_id TEXT NOT NULL DEFAULT ''; ";
+            await migration.ExecuteNonQueryAsync(cancellationToken);
+        }
     }
 }

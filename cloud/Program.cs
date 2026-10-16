@@ -242,12 +242,12 @@ public static class Program
         if (!access.IsOwner) return Results.Forbid();
 
         await using var command = connection.CreateCommand();
-        command.CommandText = "SELECT version,sha256,encrypted_archive,updated_at,device_id FROM sync_snapshots WHERE workspace_id=$workspace;";
+        command.CommandText = "SELECT version,sha256,vault_id,encrypted_archive,updated_at,device_id FROM sync_snapshots WHERE workspace_id=$workspace;";
         command.Parameters.AddWithValue("$workspace", access.WorkspaceId);
         await using var reader = await command.ExecuteReaderAsync(context.RequestAborted);
         if (!await reader.ReadAsync(context.RequestAborted)) return Results.NotFound(new { error = "Er staat nog geen cloudsnapshot." });
-        return Results.Ok(new SyncSnapshotResponse(reader.GetInt64(0), reader.GetString(1),
-            Convert.ToBase64String((byte[])reader[2]), DateTimeOffset.Parse(reader.GetString(3)), reader.GetString(4)));
+        return Results.Ok(new SyncSnapshotResponse(reader.GetInt64(0), reader.GetString(1), reader.GetString(2),
+            Convert.ToBase64String((byte[])reader[3]), DateTimeOffset.Parse(reader.GetString(4)), reader.GetString(5)));
     }
 
     private static async Task<IResult> PutSnapshotAsync(SyncUploadRequest request, HttpContext context, CloudDatabase database)
@@ -256,6 +256,8 @@ public static class Program
         if (userId is null) return Results.Unauthorized();
         if (request.ExpectedVersion < 0 || string.IsNullOrWhiteSpace(request.DeviceId) || request.DeviceId.Length > 128)
             return Results.BadRequest(new { error = "De synchronisatiegegevens zijn ongeldig." });
+        if (request.VaultId is null || request.VaultId.Length != 64 || request.VaultId.Any(c => !Uri.IsHexDigit(c)))
+            return Results.BadRequest(new { error = "De lokale kluis-ID is ongeldig." });
         if (request.EncryptedArchiveBase64 is null || request.EncryptedArchiveBase64.Length > ((MaxArchiveBytes + 2) / 3) * 4)
             return Results.BadRequest(new { error = "De versleutelde back-up is te groot (maximum 100 MB)." });
         byte[] archive;
@@ -283,15 +285,29 @@ public static class Program
 
             using var transaction = connection.BeginTransaction();
             long? currentVersion = null;
+            string? currentVaultId = null;
             await using (var command = connection.CreateCommand())
             {
                 command.Transaction = transaction;
-                command.CommandText = "SELECT version FROM sync_snapshots WHERE workspace_id=$workspace;";
+                command.CommandText = "SELECT version,vault_id FROM sync_snapshots WHERE workspace_id=$workspace;";
                 command.Parameters.AddWithValue("$workspace", access.WorkspaceId);
                 var value = await command.ExecuteScalarAsync(context.RequestAborted);
-                if (value is not null && value is not DBNull) currentVersion = Convert.ToInt64(value);
+                if (value is not null && value is not DBNull)
+                {
+                    currentVersion = Convert.ToInt64(value);
+                    await using var vaultCommand = connection.CreateCommand();
+                    vaultCommand.Transaction = transaction;
+                    vaultCommand.CommandText = "SELECT vault_id FROM sync_snapshots WHERE workspace_id=$workspace;";
+                    vaultCommand.Parameters.AddWithValue("$workspace", access.WorkspaceId);
+                    currentVaultId = (string?)await vaultCommand.ExecuteScalarAsync(context.RequestAborted);
+                }
             }
 
+            if (currentVersion is not null && !string.Equals(currentVaultId, request.VaultId, StringComparison.OrdinalIgnoreCase))
+            {
+                transaction.Rollback();
+                return Results.Json(new { error = "Deze cloudwerkruimte is al gekoppeld aan een andere lokale MoodPress-kluis. Er is niets overschreven." }, statusCode: StatusCodes.Status409Conflict);
+            }
             if ((currentVersion ?? 0) != request.ExpectedVersion || (currentVersion is null && request.ExpectedVersion != 0))
             {
                 transaction.Rollback();
@@ -303,10 +319,11 @@ public static class Program
             {
                 await using var command = connection.CreateCommand();
                 command.Transaction = transaction;
-                command.CommandText = "INSERT INTO sync_snapshots(workspace_id,version,sha256,encrypted_archive,updated_at,updated_by,device_id) VALUES($workspace,$version,$sha,$archive,$now,$user,$device);";
+                command.CommandText = "INSERT INTO sync_snapshots(workspace_id,version,sha256,vault_id,encrypted_archive,updated_at,updated_by,device_id) VALUES($workspace,$version,$sha,$vault,$archive,$now,$user,$device);";
                 command.Parameters.AddWithValue("$workspace", access.WorkspaceId);
                 command.Parameters.AddWithValue("$version", nextVersion);
                 command.Parameters.AddWithValue("$sha", actualSha);
+                command.Parameters.AddWithValue("$vault", request.VaultId.ToUpperInvariant());
                 command.Parameters.AddWithValue("$archive", archive);
                 command.Parameters.AddWithValue("$now", DateTimeOffset.UtcNow.ToString("O"));
                 command.Parameters.AddWithValue("$user", userId);
@@ -318,7 +335,7 @@ public static class Program
                 await using var command = connection.CreateCommand();
                 command.Transaction = transaction;
                 command.CommandText = """
-                    UPDATE sync_snapshots SET version=$version,sha256=$sha,encrypted_archive=$archive,updated_at=$now,updated_by=$user,device_id=$device
+                    UPDATE sync_snapshots SET version=$version,sha256=$sha,vault_id=$vault,encrypted_archive=$archive,updated_at=$now,updated_by=$user,device_id=$device
                     WHERE workspace_id=$workspace AND version=$expected;
                     """;
                 command.Parameters.AddWithValue("$workspace", access.WorkspaceId);

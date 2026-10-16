@@ -8,8 +8,8 @@ public sealed record InvitationRequest(string Email, string Role, string[] Categ
 public sealed record AcceptInvitationRequest(string Code);
 public sealed record InvitationResponse(string Id, string Code, string Email, string Role, string[] Categories, DateTimeOffset ExpiresAt);
 public sealed record MemberResponse(string Id, string Email, string DisplayName, string Role, string[] Categories, DateTimeOffset CreatedAt);
-public sealed record SyncUploadRequest(long ExpectedVersion, string Sha256, string EncryptedArchiveBase64, string DeviceId);
-public sealed record SyncSnapshotResponse(long Version, string Sha256, string EncryptedArchiveBase64, DateTimeOffset UpdatedAt, string DeviceId);
+public sealed record SyncUploadRequest(long ExpectedVersion, string Sha256, string VaultId, string EncryptedArchiveBase64, string DeviceId);
+public sealed record SyncSnapshotResponse(long Version, string Sha256, string VaultId, string EncryptedArchiveBase64, DateTimeOffset UpdatedAt, string DeviceId);
 public sealed record ShareUploadRequest(string Category, string IvBase64, string CiphertextBase64);
 public sealed record SharedItemResponse(string Id, string Category, string IvBase64, string CiphertextBase64, DateTimeOffset CreatedAt);
 public sealed record SuggestionRequest(string Category, string IvBase64, string CiphertextBase64);

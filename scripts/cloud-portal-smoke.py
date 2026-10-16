@@ -60,13 +60,13 @@ def main():
     archive64 = __import__("base64").b64encode(archive).decode()
     digest = hashlib.sha256(archive).hexdigest().upper()
     saved = request("/api/v1/sync", "PUT", owner_token, owner_workspace, {
-        "expectedVersion": 0, "sha256": digest, "encryptedArchiveBase64": archive64, "deviceId": "ci-phone"
+        "expectedVersion": 0, "sha256": digest, "vaultId": "a" * 64, "encryptedArchiveBase64": archive64, "deviceId": "ci-phone"
     })
     assert saved["version"] == 1
     current = request("/api/v1/sync", token=owner_token, workspace=owner_workspace)
     assert current["version"] == 1 and current["sha256"].lower() == digest.lower()
     request("/api/v1/sync", "PUT", owner_token, owner_workspace, {
-        "expectedVersion": 0, "sha256": digest, "encryptedArchiveBase64": archive64, "deviceId": "stale-tablet"
+        "expectedVersion": 0, "sha256": digest, "vaultId": "a" * 64, "encryptedArchiveBase64": archive64, "deviceId": "stale-tablet"
     }, expected=(409,))
 
     support_email = f"support-{secrets.token_hex(5)}@example.invalid"
