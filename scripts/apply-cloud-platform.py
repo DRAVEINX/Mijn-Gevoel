@@ -33,6 +33,12 @@ def locate_source(source_root: Path, target: str) -> tuple[Path, Path]:
 def add_vault_validator(vault_file: Path) -> None:
     source = vault_file.read_text(encoding="utf-8")
     fields_marker = "readonly byte[] _key; readonly string _dir;"
+    # Match the record size limit used by the Android 4.0 Core.
+    if "MaxRecordBytes" not in source:
+        vault_open = re.search(r"(public sealed class VaultStore[^\{]*\{)", source)
+        if not vault_open:
+            raise RuntimeError(f"Could not find VaultStore class declaration in {vault_file}")
+        source = source[:vault_open.end()] + "\n    public const long MaxRecordBytes = 64L * 1024 * 1024;\n" + source[vault_open.end():]
     if "CloudSnapshotMagic" not in source:
         if source.count(fields_marker) != 1:
             raise RuntimeError(f"Expected one VaultStore fields marker in {vault_file}")
@@ -230,8 +236,6 @@ def extract_added_patch_file(patch_path: Path, file_name: str) -> str:
 
 def patch_routine_reminder_model(models_file: Path) -> None:
     source = models_file.read_text(encoding="utf-8")
-    if "public bool RespectQuietHours { get; init; }" in source:
-        return
     marker = "    bool SoundEnabled = true);"
     replacement = """    bool SoundEnabled = true)
 {
@@ -246,23 +250,41 @@ def patch_routine_reminder_model(models_file: Path) -> None:
     public string? QuietStart { get; init; }
     public string? QuietEnd { get; init; }
 }"""
-    if source.count(marker) != 1:
-        raise RuntimeError(f"Could not find the legacy RoutineReminder record in {models_file}")
-    source = source.replace(marker, replacement, 1)
-    models_marker = 'public record TalkCard(Guid Id, string Emoji, string Text);'
-    additions = """public record CommunicationBoardCard(Guid Id, string Category, string Emoji, string Text, byte[]? PhotoData, DateTime Created);
-public record RoutineStepMedia(Guid Id, Guid RoutineId, int StepIndex, byte[]? PhotoData, byte[]? AudioData, string Narration, DateTime UpdatedAt);
-public record SupportAccessGrant(Guid Id, string Recipient, string Role, string[] Categories, DateTime CreatedAt, DateTime? ExpiresAt, bool Active);
-public record SupportHandoffEntry(Guid Id, DateTime CreatedAt, string SenderRole, string ReceiverRole, string Summary, string[] Topics, bool Acknowledged, DateTime? AcknowledgedAt);
-public record SyncTransferRecord(Guid Id, DateTime CreatedAt, string DeviceLabel, string Action, int ImportedFiles, string Fingerprint, string Result);
-public record BackupHealthRecord(Guid Id, DateTime CreatedAt, string FileName, int ArchiveEntries, string Sha256, bool ArchiveReadable, string Result);
-public record AccessibilityAuditRecord(Guid Id, DateTime CreatedAt, Dictionary<string, bool> Checks, string Notes);"""
-    if "public record CommunicationBoardCard(" not in source:
-        if source.count(models_marker) != 1:
-            raise RuntimeError(f"Could not find the TalkCard model insertion point in {models_file}")
-        source = source.replace(models_marker, models_marker + "\n" + additions, 1)
-    models_file.write_text(source, encoding="utf-8")
+    if "public bool RespectQuietHours { get; init; }" not in source:
+        if source.count(marker) != 1:
+            raise RuntimeError(f"Could not find the legacy RoutineReminder record in {models_file}")
+        source = source.replace(marker, replacement, 1)
 
+    # Keep legacy JSON records readable while porting the Android 4.0 agenda status.
+    old_agenda = "public record AgendaItem(Guid Id, DateTime Date, string Time, string Title, string Icon, bool Done);"
+    new_agenda = """public record AgendaItem(Guid Id, DateTime Date, string Time, string Title, string Icon, bool Done, string? Status = null)
+{
+    public string CurrentStatus => string.IsNullOrWhiteSpace(Status) ? (Done ? "Afgerond" : "Gepland") : Status;
+    public string Location { get; init; } = "";
+    public string Note { get; init; } = "";
+    public string ChangeSummary { get; init; } = "";
+}"""
+    if old_agenda in source:
+        source = source.replace(old_agenda, new_agenda, 1)
+
+    model_marker = 'public record TalkCard(Guid Id, string Emoji, string Text);'
+    additions = [
+        ("public record CalmOptionEntry(", "public record CalmOptionEntry(Guid Id, string Title, string Note, DateTime Created, DateTime Updated);"),
+        ("public record WellbeingEntry(", "public record WellbeingEntry(Guid Id, DateTime Created, int SleepQuality, int MovementMinutes, int EnergyLevel, string Note);"),
+        ("public record CommunicationBoardCard(", "public record CommunicationBoardCard(Guid Id, string Category, string Emoji, string Text, byte[]? PhotoData, DateTime Created);"),
+        ("public record RoutineStepMedia(", "public record RoutineStepMedia(Guid Id, Guid RoutineId, int StepIndex, byte[]? PhotoData, byte[]? AudioData, string Narration, DateTime UpdatedAt);"),
+        ("public record SupportAccessGrant(", "public record SupportAccessGrant(Guid Id, string Recipient, string Role, string[] Categories, DateTime CreatedAt, DateTime? ExpiresAt, bool Active);"),
+        ("public record SupportHandoffEntry(", "public record SupportHandoffEntry(Guid Id, DateTime CreatedAt, string SenderRole, string ReceiverRole, string Summary, string[] Topics, bool Acknowledged, DateTime? AcknowledgedAt);"),
+        ("public record SyncTransferRecord(", "public record SyncTransferRecord(Guid Id, DateTime CreatedAt, string DeviceLabel, string Action, int ImportedFiles, string Fingerprint, string Result);"),
+        ("public record BackupHealthRecord(", "public record BackupHealthRecord(Guid Id, DateTime CreatedAt, string FileName, int ArchiveEntries, string Sha256, bool ArchiveReadable, string Result);"),
+        ("public record AccessibilityAuditRecord(", "public record AccessibilityAuditRecord(Guid Id, DateTime CreatedAt, Dictionary<string, bool> Checks, string Notes);"),
+    ]
+    missing = [definition for declaration, definition in additions if declaration not in source]
+    if missing:
+        if model_marker not in source:
+            raise RuntimeError(f"Could not find the TalkCard model insertion point in {models_file}")
+        source = source.replace(model_marker, model_marker + "\n" + "\n".join(missing), 1)
+    models_file.write_text(source, encoding="utf-8")
 
 def patch_support_share_handoff(service_file: Path) -> None:
     source = service_file.read_text(encoding="utf-8")
