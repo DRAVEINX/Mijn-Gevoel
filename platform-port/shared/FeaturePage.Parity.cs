@@ -152,6 +152,8 @@ public sealed partial class FeaturePage
 
     void BuildTimerParity()
     {
+        _timer?.Stop();
+        _timer = null;
         Header("Timer", "Je timer bewaart de eindtijd, zodat je hem kunt hervatten na het wisselen van scherm of het opnieuw openen van MoodPress.");
 
         TimerSessionState state = Store.Load<TimerSessionState>("timer", Guid.Empty)
