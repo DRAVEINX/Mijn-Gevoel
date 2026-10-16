@@ -44,6 +44,8 @@ jobs:
           $sourceRoot = Join-Path $env:RUNNER_TEMP "moodpress-windows-source"
           New-Item -ItemType Directory -Force -Path $sourceRoot | Out-Null
           Expand-Archive -LiteralPath $archive -DestinationPath $sourceRoot -Force
+          python scripts/apply-cloud-platform.py --target windows --source-root $sourceRoot --repo-root $env:GITHUB_WORKSPACE
+          if ($LASTEXITCODE -ne 0) { throw "Could not apply the shared encrypted cloud-sync/portal client to the Windows source." }
           $projectRoot = Join-Path $sourceRoot "MoodPress-Windows-source-2.3.0"
           $appProject = Join-Path $projectRoot "MoodPress.WindowsApp\MoodPress.WindowsApp.csproj"
           $testsProject = Join-Path $projectRoot "MijnGevoel.Tests\MijnGevoel.Tests.csproj"
@@ -95,6 +97,7 @@ jobs:
             -p:WindowsPackageType=None `
             -p:WindowsAppSDKSelfContained=true `
             -p:PublishSingleFile=false `
+            -p:NoWarn=MSB3277 `
             --output "$publishDir"
           if ($LASTEXITCODE -ne 0) { throw "MoodPress Windows publish failed." }
           if (!(Test-Path (Join-Path $publishDir "MoodPress.exe"))) { throw "MoodPress.exe was not produced." }
