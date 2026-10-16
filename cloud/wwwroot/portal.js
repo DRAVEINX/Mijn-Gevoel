@@ -109,6 +109,8 @@
     try {
       const result=await api("/api/v1/support/invitations/accept",{method:"POST",body:JSON.stringify({code:$("invite-code").value.trim()})});
       $("invite-code").value="";
+      state.workspaceId=result.workspaceId;
+      sessionStorage.setItem("moodpress.cloud.workspace",state.workspaceId);
       await loadAccount();
       message("Uitnodiging geaccepteerd. Je hebt nu de rol "+result.role+".","success");
     } catch(e) { message(e.message,"error"); }
@@ -211,11 +213,11 @@
     try {
       const result=await api("/api/v1/sync");
       el.textContent="Cloudsnapshot versie "+result.version+", bijgewerkt "+new Date(result.updatedAt).toLocaleString()+", apparaat: "+result.deviceId+".";
-    } catch(e) { el.textContent=e.message.includes("404")||e.message.includes("not found")?"Nog geen cloudsnapshot; koppel de app en voer de eerste synchronisatie uit.":e.message; }
+    } catch(e) { el.textContent=e.message.toLowerCase().includes("cloudsnapshot")||e.message.includes("404")||e.message.includes("not found")?"Nog geen cloudsnapshot; koppel de app en voer de eerste synchronisatie uit.":e.message; }
   }
   async function logout() {
     try { if(state.token) await api("/api/v1/auth/logout",{method:"POST"}); } catch {}
-    state.token="";state.profile=null;state.workspaces=[];state.workspaceId="";state.shareKeyBytes=null;
+    state.token="";state.profile=null;state.workspaces=[];state.workspaceId="";state.shareKeyBytes=null;$("share-key").value="";$("password").value="";
     sessionStorage.removeItem("moodpress.cloud.token");sessionStorage.removeItem("moodpress.cloud.workspace");
     setSections(true);message("Je bent uitgelogd.","success");
   }
