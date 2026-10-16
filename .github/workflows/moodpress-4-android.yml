@@ -18,6 +18,10 @@ jobs:
     name: Test en bouw MoodPress 4.0 voor telefoon en tablet
     runs-on: ubuntu-latest
     steps:
+      - name: Voorkom Git-init-hint op de runner
+        shell: bash
+        run: git config --global init.defaultBranch main
+
       - name: Haal de aparte build-branch op
         uses: actions/checkout@v7
 
@@ -60,7 +64,7 @@ jobs:
         run: |
           set -euo pipefail
           dotnet restore MijnGevoel.Tests/MijnGevoel.Tests.csproj
-          dotnet test MijnGevoel.Tests/MijnGevoel.Tests.csproj --configuration Release --no-restore --logger "console;verbosity=normal"
+          dotnet test MijnGevoel.Tests/MijnGevoel.Tests.csproj --configuration Release --no-restore --logger "console;verbosity=normal" -warnaserror
 
       - name: Controleer of release-ondertekening beschikbaar is
         id: signing
