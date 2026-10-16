@@ -140,4 +140,129 @@ public sealed partial class FeaturePage
         AddButton("Leeg formulier", ResetForm, quiet: true);
         AddLabel("Mijn laatste registraties", title: true); Add(history); ReloadList();
     }
+
+    void SaveRoutineRunProgress(Routine routine, int step, bool completed = false)
+    {
+        if (routine is null || routine.Id == Guid.Empty || routine.Steps is null) return;
+        var progress = completed
+            ? RoutineRunProgressService.Complete(routine.Id, step, routine.Steps.Length, DateTime.Now)
+            : RoutineRunProgressService.AtStep(routine.Id, step, routine.Steps.Length, DateTime.Now);
+        Store.Save("routinerunprogress", routine.Id, progress);
+    }
+
+    void BuildTimerParity()
+    {
+        Header("Timer", "Je timer bewaart de eindtijd, zodat je hem kunt hervatten na het wisselen van scherm of het opnieuw openen van MoodPress.");
+
+        TimerSessionState state = Store.Load<TimerSessionState>("timer", Guid.Empty)
+            ?? TimerSessionService.CreateIdle(300);
+        var loadedState = state;
+        var initial = TimerSessionService.Reconcile(state, DateTime.Now);
+        state = initial.State;
+        if (loadedState != state) Store.Save("timer", Guid.Empty, state);
+
+        var options = new[] { "1", "2", "3", "5", "10", "15", "20", "30" };
+        var selected = options.Contains((state.TotalSeconds / 60).ToString(CultureInfo.InvariantCulture))
+            ? (state.TotalSeconds / 60).ToString(CultureInfo.InvariantCulture) : "5";
+        var minutes = AppUi.Picker("Hoeveel minuten?", options, selected);
+        var display = AppUi.Title($"{state.RemainingSeconds / 60:00}:{state.RemainingSeconds % 60:00}");
+        display.HorizontalTextAlignment = TextAlignment.Center;
+        display.FontSize = AppUi.TitleFont * 1.6;
+        var status = AppUi.Label("Kies de tijd en druk op start.");
+
+        void Render()
+        {
+            var remaining = Math.Clamp(state.RemainingSeconds, 0, Math.Max(1, state.TotalSeconds));
+            display.Text = $"{remaining / 60:00}:{remaining % 60:00}";
+        }
+
+        void ShowCompleted(bool speak)
+        {
+            _timer?.Stop();
+            Store.Save("timer", Guid.Empty, state);
+            status.Text = "⏰ De tijd is om!";
+            if (speak) AppUi.Speak("De tijd is om.");
+        }
+
+        void EnsureTicker()
+        {
+            if (_timer is null)
+            {
+                _timer = Dispatcher.CreateTimer();
+                _timer.Interval = TimeSpan.FromSeconds(1);
+                _timer.Tick += (_, _) =>
+                {
+                    var result = TimerSessionService.Reconcile(state, DateTime.Now);
+                    state = result.State;
+                    Render();
+                    if (result.CompletedNow) ShowCompleted(speak: true);
+                    else if (!state.IsRunning) _timer?.Stop();
+                };
+            }
+            if (!_timer.IsRunning) _timer.Start();
+        }
+
+        AddField("Tijd", minutes);
+        Add(display);
+        Add(status);
+        AddLabel("De eindtijd blijft lokaal bewaard. Op Windows en iOS wordt in deze versie geen timerwaarschuwing beloofd wanneer de app volledig gesloten is.", muted: true);
+
+        AddButton("▶ Start / pauze", () =>
+        {
+            var now = DateTime.Now;
+            var reconciled = TimerSessionService.Reconcile(state, now);
+            state = reconciled.State;
+            if (reconciled.CompletedNow)
+            {
+                ShowCompleted(speak: true);
+                Render();
+                return;
+            }
+
+            if (state.IsRunning)
+            {
+                state = TimerSessionService.Pause(state, now);
+                _timer?.Stop();
+                Store.Save("timer", Guid.Empty, state);
+                Render();
+                status.Text = "Gepauzeerd.";
+                return;
+            }
+
+            var selectedSeconds = int.Parse(minutes.SelectedItem?.ToString() ?? "5", CultureInfo.InvariantCulture) * 60;
+            state = TimerSessionService.Start(state, selectedSeconds, now);
+            Store.Save("timer", Guid.Empty, state);
+            Render();
+            status.Text = "De timer loopt. De resterende tijd wordt bijgewerkt zolang MoodPress open is.";
+            EnsureTicker();
+        });
+        AddButton("↻ Opnieuw", () =>
+        {
+            var selectedSeconds = int.Parse(minutes.SelectedItem?.ToString() ?? "5", CultureInfo.InvariantCulture) * 60;
+            _timer?.Stop();
+            state = TimerSessionService.Reset(selectedSeconds);
+            Store.Save("timer", Guid.Empty, state);
+            Render();
+            status.Text = "Klaar om te starten.";
+        }, quiet: true);
+
+        Render();
+        if (initial.CompletedNow)
+        {
+            ShowCompleted(speak: true);
+        }
+        else if (state.IsRunning)
+        {
+            status.Text = "De timer loopt. Je kunt naar een ander scherm gaan; de eindtijd blijft bewaard.";
+            EnsureTicker();
+        }
+        else if (state.CompletedAt is not null)
+        {
+            status.Text = "⏰ De tijd is om!";
+        }
+        else if (state.RemainingSeconds < state.TotalSeconds)
+        {
+            status.Text = "Gepauzeerd.";
+        }
+    }
 }
