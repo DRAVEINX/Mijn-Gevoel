@@ -69,6 +69,23 @@ jobs:
         working-directory: source/MijnGevoel-Android
         run: dotnet build MijnGevoel.Android/MijnGevoel.Android.csproj --configuration Release --framework net10.0-android --no-restore -p:MoodPressTarget=Tablet --warnaserror
 
+
+  platform-source-audit:
+    name: Inspect Windows and iOS project structure
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Extract platform source packages
+        run: |
+          set -euo pipefail
+          mkdir -p platform-source/windows platform-source/ios
+          unzip -q MoodPress-Windows-source-2.3.0.zip -d platform-source/windows
+          unzip -q MoodPress-iOS-compleet-2.3.2.zip -d platform-source/ios
+          find platform-source/windows -name '*.csproj' -print | sort
+          find platform-source/ios -name '*.csproj' -print | sort
+          find platform-source/windows -name 'FeaturePage.cs' -o -name 'DashboardPage.cs' -o -name 'AppSession.cs' -o -name 'BackupService.cs' | sort
+          find platform-source/ios -name 'FeaturePage.cs' -o -name 'DashboardPage.cs' -o -name 'AppSession.cs' -o -name 'BackupService.cs' | sort
+
   build-and-smoke-test:
     name: Build and test cloud API / support portal
     runs-on: ubuntu-latest
