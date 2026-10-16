@@ -24,7 +24,7 @@ def patch_journal_draft_and_dictation(app_dir: Path, target: str) -> None:
                 replacement = tag[:-2] + ' Version="15.0.1" />'
             project = project[:refs[0].start()] + replacement + project[refs[0].end():]
     else:
-        controls = re.search(r'(?m)^(?P<indent>\s*)<PackageReference\s+Include="Microsoft\.Maui\.Controls"[^>]*/>', project)
+        controls = re.search(r'(?m)^(?P<indent>[ \t]*)<PackageReference\s+Include="Microsoft\.Maui\.Controls"[^>]*/>', project)
         if not controls:
             raise RuntimeError(f"Microsoft.Maui.Controls reference missing from {app_project}")
         indent = controls.group("indent")
@@ -149,17 +149,21 @@ def patch_journal_draft_and_dictation(app_dir: Path, target: str) -> None:
             raise RuntimeError(f"Could not patch draft timer lifecycle in {page}")
 
     if "_flushJournalDraft?.Invoke()" not in text:
-        marker = "        _voiceRecordTimer?.Stop();"
-        if text.count(marker) != 1:
-            raise RuntimeError(f"Could not locate voice timer cleanup in {page}")
-        text = text.replace(
-            marker,
+        disappearing = re.search(
+            r"(protected override void OnDisappearing\(\)\s*\{.*?)(?P<marker>^[ \t]*_voiceRecordTimer\?\.Stop\(\);)",
+            text,
+            re.S | re.M,
+        )
+        if not disappearing:
+            raise RuntimeError(f"Could not locate voice timer cleanup inside OnDisappearing in {page}")
+        marker = disappearing.group("marker")
+        extra = (
             marker
             + "\n        _journalDraftTimer?.Stop();"
             + "\n        try { _flushJournalDraft?.Invoke(); } catch (Exception ex) { AppLog.Write(ex); }"
-            + "\n        if (_speechToTextListening) _ = StopSpeechToTextAsync();",
-            1,
+            + "\n        if (_speechToTextListening) _ = StopSpeechToTextAsync();"
         )
+        text = text[:disappearing.start("marker")] + extra + text[disappearing.end("marker"):]
 
     journal_anchor = '        var status = AppUi.Label("");\n        Guid? current = null;'
     if 'var draftKind = "journal-draft-" + kind;' not in text:
