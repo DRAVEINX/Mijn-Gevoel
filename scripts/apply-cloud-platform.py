@@ -333,12 +333,7 @@ def patch_feature_routing(app_dir: Path, namespace: str, repo_root: Path, core_d
             content = content.replace(
                 'status.Text = $"Goed. Je krijgt één herinnering om {when:HH:mm}."; ',
                 'status.Text = oneTimeScheduled ? $"Goed. Je krijgt één herinnering om {when:HH:mm}." : "De keuze is bewaard, maar meldingen worden op dit apparaat niet ondersteund."; ')
-            content = content.replace(
-                'status.Text = $"Goed. Je krijgt één herinnering om {when:HH:mm}."; ',
-                'status.Text = oneTimeScheduled ? $"Goed. Je krijgt één herinnering om {when:HH:mm}." : "De keuze is bewaard, maar meldingen worden op dit apparaat niet ondersteund."; ')
-            content = content.replace(
-                'status.Text = $"Je krijgt op de gekozen dagen om {reminder.Time} een herinnering.";',
-                'status.Text = $"Je krijgt op de gekozen dagen om {reminder.Time} een herinnering.";')
+
             helper_marker = "\n}\n\ninternal static class MoodReminderIds"
             helpers = r"""
     async Task<bool> EnsureMoodReminderPermissionAsync()
