@@ -1814,7 +1814,7 @@ diff -ruN moodpress_base_flat/MijnGevoel.Android/Platforms/Android/MoodPressWidg
 +[MetaData("android.appwidget.provider", Resource = "@xml/moodpress_widget_info")]
 +public sealed class MoodPressWidgetProvider : AppWidgetProvider
 +{
-+    public override void OnUpdate(Context? context, AppWidgetManager? appWidgetManager, int[]? appWidgetIds)
++    public override void OnUpdate(Context context, AppWidgetManager appWidgetManager, int[] appWidgetIds)
 +    {
 +        if (context is null || appWidgetManager is null || appWidgetIds is null) return;
 +        foreach (var appWidgetId in appWidgetIds)
@@ -3007,7 +3007,7 @@ diff -ruN moodpress_base_flat/scripts/check-moodpress-4.sh moodpress4_build/scri
 +
 +# Regression checks for warnings found in the first successful Android build.
 +widget="MijnGevoel.Android/Platforms/Android/MoodPressWidgetProvider.cs"
-+grep -q 'OnUpdate(Context? context, AppWidgetManager? appWidgetManager, int\[\]? appWidgetIds)' "$widget"
++grep -Fq 'OnUpdate(Context context, AppWidgetManager appWidgetManager, int[] appWidgetIds)' "$widget"
 +grep -q 'PickPhotosAsync(new MediaPickerOptions { SelectionLimit = 1 })' "$extra"
 +if grep -q 'PickPhotoAsync(' "$extra"; then echo 'Obsolete single-photo picker call remains.' >&2; exit 1; fi
 +if grep -q '^/// <summary>Encrypts the whole cross-device archive' "$extra"; then echo 'Dangling XML doc comment remains.' >&2; exit 1; fi
