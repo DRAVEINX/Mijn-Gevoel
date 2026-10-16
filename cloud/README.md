@@ -29,3 +29,7 @@ Deploy behind HTTPS, configure a persistent writable disk for the SQLite databas
 - `POST/GET /api/v1/support/suggestions`, `POST /api/v1/support/suggestions/{id}/decision`
 
 The mobile/desktop client integration is a separate step. Do not treat this project alone as proof that automatic device sync has been enabled in the apps.
+
+
+## Client integration status (2026-10-16)
+Android cloud-sync client code is now included in the separate cloud integration patch branch and is being validated by the Android phone/tablet compile job. Do not install this branch as a release until both platform builds pass and the service has been deployed behind HTTPS.
