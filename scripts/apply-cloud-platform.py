@@ -656,13 +656,15 @@ def patch_timer_and_routine_progress(app_dir: Path) -> None:
             raise RuntimeError(f"Could not find exactly one OnAppearing timer refresh point in {page}")
         source = source.replace(appearing_old, appearing_new, 1)
 
-    start_old = "() => { _runningRoutine = routine; _routineStep = 0; ShowRoutineRun(); }"
-    start_new = "() => { _runningRoutine = routine; _routineStep = RoutineRunProgressService.ResumeStep(Store.Load<RoutineRunProgress>(\"routinerunprogress\", routine.Id), routine.Steps.Length); ShowRoutineRun(); }"
-    if "RoutineRunProgressService.ResumeStep(Store.Load<RoutineRunProgress>" not in source:
+    # Newer Android BuildRoutines already restores progress; retain a fallback for older archives.
+    if "RoutineRunProgressService.ResumeStep(progress, routine.Steps.Length)" not in source:
+        start_old = "() => { _runningRoutine = routine; _routineStep = 0; ShowRoutineRun(); }"
+        start_new = "() => { _runningRoutine = routine; _routineStep = RoutineRunProgressService.ResumeStep(Store.Load<RoutineRunProgress>(\\"routinerunprogress\\", routine.Id), routine.Steps.Length); ShowRoutineRun(); }"
         if source.count(start_old) != 1:
             raise RuntimeError(f"Could not find exactly one routine start action in {page}")
         source = source.replace(start_old, start_new, 1)
 
+    routine_start, routine_end, routine_method = extract_csharp_method(source, "ShowRoutineRun")
     routine_header = "        if (routine is null) return;\n        _root.Children.Clear();"
     routine_with_progress = """        if (routine is null) return;
         if (routine.Steps is null || routine.Steps.Length == 0)
@@ -674,27 +676,27 @@ def patch_timer_and_routine_progress(app_dir: Path) -> None:
         _routineStep = Math.Clamp(_routineStep, 0, routine.Steps.Length - 1);
         SaveRoutineRunProgress(routine, _routineStep);
         _root.Children.Clear();"""
-    if "SaveRoutineRunProgress(routine, _routineStep);" not in source:
-        if source.count(routine_header) != 1:
+    if "SaveRoutineRunProgress(routine, _routineStep);" not in routine_method:
+        if routine_method.count(routine_header) != 1:
             raise RuntimeError(f"Could not find exactly one ShowRoutineRun insertion point in {page}")
-        source = source.replace(routine_header, routine_with_progress, 1)
+        routine_method = routine_method.replace(routine_header, routine_with_progress, 1)
 
     completion_old = 'if (_routineStep >= routine.Steps.Length - 1) { await DisplayAlertAsync("Goed gedaan", "Je hebt alle stappen gedaan.", "Klaar"); _runningRoutine = null; Build(); }'
     completion_new = 'if (_routineStep >= routine.Steps.Length - 1) { SaveRoutineRunProgress(routine, _routineStep, completed: true); await DisplayAlertAsync("Goed gedaan", "Je hebt alle stappen gedaan.", "Klaar"); _runningRoutine = null; Build(); }'
-    if "SaveRoutineRunProgress(routine, _routineStep, completed: true);" not in source:
-        if source.count(completion_old) != 1:
+    if "SaveRoutineRunProgress(routine, _routineStep, completed: true);" not in routine_method:
+        if routine_method.count(completion_old) != 1:
             raise RuntimeError(f"Could not find exactly one routine completion action in {page}")
-        source = source.replace(completion_old, completion_new, 1)
+        routine_method = routine_method.replace(completion_old, completion_new, 1)
 
     stop_old = 'AddButton("Stoppen en terug", () => { _runningRoutine = null; Build(); }, quiet: true);'
     stop_new = 'AddButton("Stoppen en terug", () => { SaveRoutineRunProgress(routine, _routineStep); _runningRoutine = null; Build(); }, quiet: true);'
-    if stop_new not in source:
-        if source.count(stop_old) != 1:
+    if stop_new not in routine_method:
+        if routine_method.count(stop_old) != 1:
             raise RuntimeError(f"Could not find exactly one routine stop action in {page}")
-        source = source.replace(stop_old, stop_new, 1)
+        routine_method = routine_method.replace(stop_old, stop_new, 1)
 
+    source = source[:routine_start] + routine_method + source[routine_end:]
     page.write_text(source, encoding="utf-8")
-
 
 def main() -> int:
     parser = argparse.ArgumentParser()
