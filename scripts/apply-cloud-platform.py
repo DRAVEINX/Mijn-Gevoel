@@ -366,8 +366,14 @@ def patch_feature_routing(app_dir: Path, namespace: str, repo_root: Path, core_d
         var center = UserNotifications.UNUserNotificationCenter.Current;
         var settings = await center.GetNotificationSettingsAsync();
         if (settings.AuthorizationStatus == UserNotifications.UNAuthorizationStatus.NotDetermined)
-            return await center.RequestAuthorizationAsync(UserNotifications.UNAuthorizationOptions.Alert |
-                UserNotifications.UNAuthorizationOptions.Sound | UserNotifications.UNAuthorizationOptions.Badge);
+        {
+            // The .NET iOS binding returns (granted, NSError), not a bare bool.
+            var authorization = await center.RequestAuthorizationAsync(
+                UserNotifications.UNAuthorizationOptions.Alert |
+                UserNotifications.UNAuthorizationOptions.Sound |
+                UserNotifications.UNAuthorizationOptions.Badge);
+            return authorization.Item1;
+        }
         return settings.AuthorizationStatus == UserNotifications.UNAuthorizationStatus.Authorized ||
             settings.AuthorizationStatus == UserNotifications.UNAuthorizationStatus.Provisional;
 #else
