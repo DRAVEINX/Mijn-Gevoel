@@ -208,17 +208,17 @@ def main() -> int:
 
     # The Windows MAUI app targets .NET 10, while the shared Core project targets
     # .NET 8 and brings System.Drawing.Common 6 transitively through QRCoder.
-    # Add/update the direct Windows app reference so .NET 10 wins assembly
-    # unification at the executable boundary. The matching, narrowly-scoped
-    # MSB3277 suppression is applied only to the Windows build/publish commands;
-    # all other warnings remain errors.
+    # Give the Windows executable an explicit .NET 10 reference so assembly
+    # resolution prefers the runtime-compatible version. CI suppresses only
+    # MSB3277 for this intentional cross-target version bridge; other warnings
+    # remain errors.
     if args.target == "windows":
         app_project = app_dir / "MoodPress.WindowsApp.csproj"
         if not app_project.is_file():
             raise FileNotFoundError(f"Windows app project is missing: {app_project}")
         app_project_text = app_project.read_text(encoding="utf-8")
         package_pattern = re.compile(
-            r'<PackageReference\\b(?=[^>]*\\bInclude=["\\']System\\.Drawing\\.Common["\\'])[^>]*/>',
+            r'<PackageReference\b(?=[^>]*\bInclude=["\']System\.Drawing\.Common["\'])[^>]*/>',
             re.I,
         )
         package_matches = list(package_pattern.finditer(app_project_text))
@@ -226,9 +226,9 @@ def main() -> int:
             raise RuntimeError(f"Multiple direct System.Drawing.Common references found in {app_project}")
         if package_matches:
             package_tag = package_matches[0].group(0)
-            if re.search(r'\\bVersion=["\\'][^"\\']+["\\']', package_tag, re.I):
+            if re.search(r'\bVersion=["\'][^"\']+["\']', package_tag, re.I):
                 package_tag = re.sub(
-                    r'\\bVersion=["\\'][^"\\']+["\\']',
+                    r'\bVersion=["\'][^"\']+["\']',
                     'Version="10.0.0"',
                     package_tag,
                     count=1,
@@ -238,50 +238,20 @@ def main() -> int:
                 package_tag = package_tag[:-2] + ' Version="10.0.0" />'
             app_project_text = app_project_text[:package_matches[0].start()] + package_tag + app_project_text[package_matches[0].end():]
         else:
-            if re.search(r'<PackageReference\\b[^>]*\\bInclude=["\\']System\\.Drawing\\.Common["\\']', app_project_text, re.I):
+            if re.search(r'<PackageReference\b[^>]*\bInclude=["\']System\.Drawing\.Common["\']', app_project_text, re.I):
                 raise RuntimeError(f"System.Drawing.Common reference in {app_project} is not a self-closing PackageReference; inspect it before patching.")
-            closing_project = re.search(r'\\s*</Project>\\s*
-    for name in ("CloudSyncClient.cs", "CloudArchiveMerger.cs", "CloudSyncPage.cs"):
-        source_path = shared / name
-        if not source_path.is_file():
-            raise FileNotFoundError(f"Shared cloud-sync source is missing: {source_path}")
-        source = source_path.read_text(encoding="utf-8")
-        if "__MOODPRESS_NAMESPACE__" not in source:
-            raise RuntimeError(f"Namespace placeholder is missing from {source_path}")
-        destination = app_dir / name
-        destination.write_text(source.replace("__MOODPRESS_NAMESPACE__", namespace), encoding="utf-8")
-
-    add_vault_validator(core_dir / "Data" / "VaultStore.cs")
-    patch_app_session(app_dir)
-    patch_dashboard(app_dir)
-
-    required = [
-        app_dir / "CloudSyncClient.cs",
-        app_dir / "CloudArchiveMerger.cs",
-        app_dir / "CloudSyncPage.cs",
-        core_dir / "Data" / "VaultStore.cs",
-        app_dir / "AppSession.cs",
-        app_dir / "DashboardPage.cs",
-    ]
-    for path in required:
-        if not path.is_file():
-            raise FileNotFoundError(path)
-    print(f"Applied MoodPress cloud-sync/portal client to {args.target}: {app_dir}")
-    return 0
-
-if __name__ == "__main__":
-    try:
-        raise SystemExit(main())
-    except Exception as exc:
-        print(f"Cloud platform patch failed: {exc}", file=sys.stderr)
-        raise
-, app_project_text, re.I)
+            closing_tag = "<" + "/Project>"
+            closing_project = re.search(r'\s*' + re.escape(closing_tag) + r'\s*$', app_project_text, re.I)
             if not closing_project:
                 raise RuntimeError(f"Could not find closing Project tag in {app_project}")
-            addition = '  <ItemGroup>\\n    <PackageReference Include="System.Drawing.Common" Version="10.0.0" />\\n  </ItemGroup>\\n'
-            app_project_text = app_project_text[:closing_project.start()] + '\\n' + addition + app_project_text[closing_project.start():]
+            addition = '  <ItemGroup>\n    <PackageReference Include="System.Drawing.Common" Version="10.0.0" />\n  </ItemGroup>\n'
+            app_project_text = app_project_text[:closing_project.start()] + '\n' + addition + app_project_text[closing_project.start():]
         app_project.write_text(app_project_text, encoding="utf-8")
-        if not re.search(r'<PackageReference\\b(?=[^>]*\\bInclude=["\\']System\\.Drawing\\.Common["\\'])(?=[^>]*\\bVersion=["\\']10\\.0\\.0["\\'])[^>]*/>', app_project_text, re.I):
+        confirmation = re.compile(
+            r'<PackageReference\b(?=[^>]*\bInclude=["\']System\.Drawing\.Common["\'])(?=[^>]*\bVersion=["\']10\.0\.0["\'])[^>]*/>',
+            re.I,
+        )
+        if not confirmation.search(app_project_text):
             raise RuntimeError(f"System.Drawing.Common 10.0.0 could not be confirmed in {app_project}")
 
     shared = args.repo_root.resolve() / "platform-port" / "shared"
