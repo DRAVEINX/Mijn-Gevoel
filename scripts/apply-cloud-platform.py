@@ -748,8 +748,11 @@ def sync_portable_feature_methods(android_source_root: Path, app_dir: Path, name
         "SaveQuickFeelingAsync", "QuickFeelingEmoji",
         "SendQuickSignalAsync", "ManageMoodCheckInAsync"
     ):
-        if re.search(rf"(?m)^    .*\b{re.escape(helper_name)}\s*\(", target):
+        try:
+            extract_csharp_method(target, helper_name)
             continue
+        except RuntimeError:
+            pass
         _, _, helper_body = extract_csharp_method(source, helper_name)
         insert_at = target.rfind("\n}")
         if insert_at < 0:
