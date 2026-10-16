@@ -32,39 +32,118 @@ def locate_source(source_root: Path, target: str) -> tuple[Path, Path]:
 
 def add_vault_validator(vault_file: Path) -> None:
     source = vault_file.read_text(encoding="utf-8")
-    if "IsEncryptedRecordForCurrentKey(" in source:
-        return
+    fields_marker = "readonly byte[] _key; readonly string _dir;"
+    if "CloudSnapshotMagic" not in source:
+        if source.count(fields_marker) != 1:
+            raise RuntimeError(f"Expected one VaultStore fields marker in {vault_file}")
+        fields = """
+    const int CloudSnapshotHeaderLength = 36;
+    const int MaxCloudSnapshotBytes = 100 * 1024 * 1024;
+    static readonly byte[] CloudSnapshotMagic = "MPCLOUD1"u8.ToArray();
+    static readonly byte[] CloudSnapshotAad = "MoodPress cloud snapshot v1"u8.ToArray();"""
+        source = source.replace(fields_marker, fields_marker + "\n" + fields, 1)
+
     marker = "    public T? Load<T>(string kind, Guid id)"
     if source.count(marker) != 1:
         raise RuntimeError(f"Expected one VaultStore.Load marker in {vault_file}")
-    method = f'''    /// <summary>Validates an encrypted record against this account's active vault key without returning plaintext.</summary>
+
+    methods = {
+        "GetStableCloudVaultId": """
+    /// <summary>Returns a stable, non-reversible identifier for this active high-entropy vault key.</summary>
+    public string GetStableCloudVaultId()
+    {
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        hash.AppendData("MoodPress cloud vault identity v1"u8);
+        hash.AppendData(_key);
+        var digest = hash.GetHashAndReset();
+        try { return Convert.ToHexString(digest); }
+        finally { CryptographicOperations.ZeroMemory(digest); }
+    }
+
+""",
+        "EncryptCloudSnapshot": """
+    /// <summary>Encrypts an entire backup archive with the active vault key before it leaves this device.</summary>
+    public byte[] EncryptCloudSnapshot(byte[] plaintext)
+    {
+        ArgumentNullException.ThrowIfNull(plaintext);
+        if (plaintext.Length == 0 || plaintext.LongLength > MaxCloudSnapshotBytes - CloudSnapshotHeaderLength)
+            throw new ArgumentException("De cloudback-up is leeg of te groot.", nameof(plaintext));
+        var output = new byte[CloudSnapshotHeaderLength + plaintext.Length];
+        var nonce = RandomNumberGenerator.GetBytes(12);
+        try
+        {
+            CloudSnapshotMagic.CopyTo(output, 0);
+            nonce.CopyTo(output, 8);
+            using var aes = new AesGcm(_key, 16);
+            aes.Encrypt(nonce, plaintext, output.AsSpan(CloudSnapshotHeaderLength), output.AsSpan(20, 16), CloudSnapshotAad);
+            return output;
+        }
+        catch
+        {
+            CryptographicOperations.ZeroMemory(output);
+            throw;
+        }
+        finally { CryptographicOperations.ZeroMemory(nonce); }
+    }
+
+""",
+        "DecryptCloudSnapshot": """
+    /// <summary>Authenticates and decrypts only a snapshot sealed with the active vault key.</summary>
+    public byte[] DecryptCloudSnapshot(byte[] envelope)
+    {
+        ArgumentNullException.ThrowIfNull(envelope);
+        if (envelope.Length <= CloudSnapshotHeaderLength || envelope.Length > MaxCloudSnapshotBytes ||
+            !envelope.AsSpan(0, 8).SequenceEqual(CloudSnapshotMagic))
+            throw new InvalidDataException("De versleutelde cloudback-up is ongeldig of te groot.");
+        var plaintext = new byte[envelope.Length - CloudSnapshotHeaderLength];
+        try
+        {
+            using var aes = new AesGcm(_key, 16);
+            aes.Decrypt(envelope.AsSpan(8, 12), envelope.AsSpan(CloudSnapshotHeaderLength),
+                envelope.AsSpan(20, 16), plaintext, CloudSnapshotAad);
+            return plaintext;
+        }
+        catch
+        {
+            CryptographicOperations.ZeroMemory(plaintext);
+            throw;
+        }
+    }
+
+""",
+        "IsEncryptedRecordForCurrentKey": """
+    /// <summary>Validates an encrypted record against this account's active vault key without returning plaintext.</summary>
     public bool IsEncryptedRecordForCurrentKey(string kind, Guid id, byte[]? blob)
-    {{
+    {
         if (string.IsNullOrWhiteSpace(kind) || kind.Length > 80 ||
             kind.Any(ch => !((ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '-')))
             return false;
-        if (blob is null || blob.Length <= 0 || blob.LongLength > {MAX_RECORD_BYTES}L)
+        if (blob is null || blob.Length <= 0 || blob.LongLength > 67108864L)
             return false;
 
         byte[]? plain = null;
         try
-        {{
-            plain = Crypto.Open(_key, blob, $"{{kind}}:{{id:N}}");
+        {
+            plain = Crypto.Open(_key, blob, $"{kind}:{id:N}");
             using var document = JsonDocument.Parse(plain);
             return true;
-        }}
+        }
         catch (Exception ex) when (ex is CryptographicException or JsonException or ArgumentException or InvalidDataException)
-        {{
+        {
             return false;
-        }}
+        }
         finally
-        {{
+        {
             if (plain is not null) CryptographicOperations.ZeroMemory(plain);
-        }}
-    }}
+        }
+    }
 
-'''
-    vault_file.write_text(source.replace(marker, method + marker), encoding="utf-8")
+"""
+    }
+    for method_name, method_body in methods.items():
+        if f"{method_name}(" not in source:
+            source = source.replace(marker, method_body + marker, 1)
+    vault_file.write_text(source, encoding="utf-8")
 
 def patch_app_session(app_dir: Path) -> None:
     path = app_dir / "AppSession.cs"

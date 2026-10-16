@@ -108,8 +108,10 @@ public static class CloudSyncClient
             if (string.IsNullOrWhiteSpace(endpoint) || string.IsNullOrWhiteSpace(token) || string.IsNullOrWhiteSpace(workspace))
                 throw new InvalidOperationException("Koppel eerst je beveiligde MoodPress-cloudaccount in dit scherm.");
 
-            var vaultId = Path.GetFileNameWithoutExtension(AppSession.Accounts.AccountFilePath(AppSession.Username));
-            if (vaultId.Length != 64 || vaultId.Any(c => !Uri.IsHexDigit(c)))
+            var accountPathId = Path.GetFileNameWithoutExtension(AppSession.Accounts.AccountFilePath(AppSession.Username));
+            var vaultId = AppSession.Store.GetStableCloudVaultId();
+            if (accountPathId.Length != 64 || accountPathId.Any(c => !Uri.IsHexDigit(c)) ||
+                vaultId.Length != 64 || vaultId.Any(c => !Uri.IsHexDigit(c)))
                 throw new InvalidDataException("De lokale kluis-ID kan niet veilig worden vastgesteld.");
 
             var localZip = NewTempPath("local");
@@ -170,7 +172,7 @@ public static class CloudSyncClient
             if (!merge.Success)
                 throw new CloudSyncConflictException("Er zijn wijzigingen op beide apparaten in hetzelfde item. Er is niets overschreven. Conflicterende items: " + string.Join(", ", merge.Conflicts.Take(5)));
 
-            var remoteFingerprint = CloudArchiveMerger.ContentFingerprint(remoteZip, AppSession.Store, vaultId);
+            var remoteFingerprint = CloudArchiveMerger.ContentFingerprint(remoteZip, AppSession.Store, accountPathId);
             var uploadVersion = remote.Version;
             EnsureArchiveSize(mergedZip);
             var mergedBytes = await File.ReadAllBytesAsync(mergedZip, cancellationToken);

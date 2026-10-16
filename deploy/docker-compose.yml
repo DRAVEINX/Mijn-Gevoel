@@ -1,0 +1,51 @@
+services:
+  initialise-cloud-data:
+    image: busybox:1.36
+    user: "0:0"
+    command: ["sh", "-c", "mkdir -p /data && chown -R 1654:1654 /data && chmod 700 /data"]
+    volumes:
+      - moodpress_data:/data
+    restart: "no"
+
+  moodpress-cloud:
+    build:
+      context: ..
+      dockerfile: cloud/Dockerfile
+    environment:
+      ASPNETCORE_URLS: http://+:8080
+      ASPNETCORE_ENVIRONMENT: Production
+      MOODPRESS_DATABASE_PATH: /data/moodpress-cloud.db
+    expose:
+      - "8080"
+    volumes:
+      - moodpress_data:/data
+    depends_on:
+      initialise-cloud-data:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+
+  caddy:
+    image: caddy:2
+    environment:
+      MOODPRESS_DOMAIN: ${MOODPRESS_DOMAIN:?Set MOODPRESS_DOMAIN in deploy/.env}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - moodpress-cloud
+    restart: unless-stopped
+
+volumes:
+  moodpress_data:
+  caddy_data:
+  caddy_config:

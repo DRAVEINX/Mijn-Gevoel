@@ -1,0 +1,4 @@
+{$MOODPRESS_DOMAIN} {
+    encode zstd gzip
+    reverse_proxy moodpress-cloud:8080
+}
