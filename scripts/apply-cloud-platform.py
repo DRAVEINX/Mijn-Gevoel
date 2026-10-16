@@ -639,6 +639,7 @@ def main() -> int:
     patch_app_session(app_dir)
     patch_dashboard(app_dir)
     patch_feature_routing(app_dir, namespace, args.repo_root.resolve(), core_dir)
+    # Keep text dictation and encrypted draft recovery consistent with the existing audio-note UI on both ports.
     patch_journal_draft_and_dictation(app_dir, args.target)
 
     required = [
