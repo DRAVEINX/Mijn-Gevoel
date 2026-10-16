@@ -121,18 +121,7 @@ jobs:
             for format in apk aab; do
               out="$RUNNER_TEMP/moodpress-${target}-${format}"
               rm -rf "$out"
-              dotnet publish "$project" \
-                --configuration Release \
-                --framework net10.0-android \
-                -p:MoodPressTarget="$target" \
-                -warnaserror \
-                -p:AndroidPackageFormat="$format" \
-                -p:AndroidKeyStore=true \
-                "-p:AndroidSigningKeyStore=$RUNNER_TEMP/moodpress-release.keystore" \
-                "-p:AndroidSigningKeyAlias=$ANDROID_KEY_ALIAS" \
-                "-p:AndroidSigningKeyPass=file:$key_pass_file" \
-                "-p:AndroidSigningStorePass=file:$store_pass_file" \
-                --output "$out"
+              dotnet publish "$project" --configuration Release --framework net10.0-android -p:MoodPressTarget="$target" -warnaserror -p:AndroidPackageFormat="$format" -p:AndroidKeyStore=true "-p:AndroidSigningKeyStore=$RUNNER_TEMP/moodpress-release.keystore" "-p:AndroidSigningKeyAlias=$ANDROID_KEY_ALIAS" "-p:AndroidSigningKeyPass=file:$key_pass_file" "-p:AndroidSigningStorePass=file:$store_pass_file" --output "$out"
               artifact="$(find "$out" -type f -iname "*.$format" -print -quit)"
               if [[ -z "$artifact" || ! -f "$artifact" ]]; then
                 echo "Geen $format aangetroffen voor $target." >&2
@@ -142,8 +131,23 @@ jobs:
               if [[ "$format" == "apk" ]]; then
                 "$apksigner" verify --verbose --print-certs "$artifact"
               else
-                if ! unzip -Z1 "$artifact" | grep -Eq '^META-INF/[^/]+\.SF
-
+                if ! unzip -Z1 "$artifact" | grep -Eq '^META-INF/[^/]+[.]SF$' || ! unzip -Z1 "$artifact" | grep -Eq '^META-INF/[^/]+[.](RSA|DSA|EC)$'; then
+                  echo "AAB mist JAR-handtekeningbestanden: $artifact" >&2
+                  exit 1
+                fi
+                verify_output="$(jarsigner -verify -verbose "$artifact" 2>&1)" || { printf '%s\n' "$verify_output"; exit 1; }
+                if ! printf '%s\n' "$verify_output" | grep -qi 'jar verified[.]'; then
+                  printf '%s\n' "$verify_output"
+                  echo "AAB-handtekening kon niet worden gevalideerd: $artifact" >&2
+                  exit 1
+                fi
+              fi
+              cp "$artifact" "$GITHUB_WORKSPACE/artifacts/MoodPress-4.0.0-${target}.${format}"
+            done
+          done
+          cd "$GITHUB_WORKSPACE/artifacts"
+          sha256sum MoodPress-4.0.0-Phone.apk MoodPress-4.0.0-Phone.aab MoodPress-4.0.0-Tablet.apk MoodPress-4.0.0-Tablet.aab | tee SHA256SUMS.txt
+          ls -lh
       - name: Bouw een debug-APK voor telefoon en tablet als release-sleutels ontbreken
         if: steps.signing.outputs.ready != 'true'
         working-directory: source/MijnGevoel-Android
