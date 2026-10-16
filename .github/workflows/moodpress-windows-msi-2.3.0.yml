@@ -7,6 +7,8 @@ on:
       - "MoodPress-Windows-source-2.3.0.zip"
       - "MoodPress-Windows-source-2.3.0-fixed.zip"
       - ".github/workflows/moodpress-windows-msi-2.3.0.yml"
+      - "scripts/apply-cloud-platform.py"
+      - "MoodPress-4.0.0-github.patch"
 
 permissions:
   contents: read
