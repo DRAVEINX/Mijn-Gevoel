@@ -198,7 +198,8 @@ jobs:
           security import "$RUNNER_TEMP/moodpress-distribution.p12" -P "$IOS_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$keychain"
           security set-key-partition-list -S apple-tool:,apple: -s -k "$keychain_password" "$keychain"
           security list-keychain -d user -s "$keychain"
-          profile_uuid=$(/usr/libexec/PlistBuddy -c 'Print :UUID' /dev/stdin < <(security cms -D -i "$RUNNER_TEMP/moodpress-profile.mobileprovision"))
+          security cms -D -i "$RUNNER_TEMP/moodpress-profile.mobileprovision" > "$RUNNER_TEMP/moodpress-profile.plist"
+          profile_uuid=$(/usr/libexec/PlistBuddy -c 'Print :UUID' "$RUNNER_TEMP/moodpress-profile.plist")
           test -n "$profile_uuid"
           mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
           cp "$RUNNER_TEMP/moodpress-profile.mobileprovision" "$HOME/Library/MobileDevice/Provisioning Profiles/$profile_uuid.mobileprovision"
@@ -278,7 +279,7 @@ jobs:
           if [[ -n "${MOODPRESS_IOS_KEYCHAIN:-}" ]]; then
             security delete-keychain "$MOODPRESS_IOS_KEYCHAIN" || true
           fi
-          rm -f "$RUNNER_TEMP/moodpress-distribution.p12" "$RUNNER_TEMP/moodpress-profile.mobileprovision"
+          rm -f "$RUNNER_TEMP/moodpress-distribution.p12" "$RUNNER_TEMP/moodpress-profile.mobileprovision" "$RUNNER_TEMP/moodpress-profile.plist"
           if [[ -n "${MOODPRESS_IOS_PROFILE_UUID:-}" ]]; then
             rm -f "$HOME/Library/MobileDevice/Provisioning Profiles/$MOODPRESS_IOS_PROFILE_UUID.mobileprovision"
           fi
