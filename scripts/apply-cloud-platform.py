@@ -234,6 +234,17 @@ def patch_dashboard(app_dir: Path) -> None:
         if source.count(ordinary_route) != 1:
             raise RuntimeError(f"Could not identify the default feature route in {path}")
         source = source.replace(ordinary_route, cloud_route + "\n        " + ordinary_route, 1)
+    groups_anchor = "            var items = Groups[groupIndex];"
+    groups_filtered = """            var items = Groups[groupIndex]
+                .Where(item => item.Kind == FeatureKind.WhoWorks ||
+                    FeatureVisibilityService.IsEnabled(AppSession.Settings, item.Kind.ToString()))
+                .ToArray();
+            if (items.Length == 0) continue;"""
+    if "FeatureVisibilityService.IsEnabled(AppSession.Settings, item.Kind.ToString())" not in source:
+        if source.count(groups_anchor) != 1:
+            raise RuntimeError(f"Could not locate dashboard group iteration in {path}")
+        source = source.replace(groups_anchor, groups_filtered, 1)
+
     path.write_text(source, encoding="utf-8")
 
 
@@ -620,18 +631,57 @@ def extract_csharp_method(source: str, method_name: str) -> tuple[int, int, str]
     raise RuntimeError(f"Unbalanced braces while reading method {method_name}")
 
 
-def sync_portable_feature_methods(android_source_root: Path, app_dir: Path) -> None:
-    """Port newer platform-neutral UI methods from Android 2.5.2 without replacing platform-specific pages."""
+def sync_portable_feature_methods(android_source_root: Path, app_dir: Path, namespace: str) -> None:
+    """Port current platform-neutral Android 2.5.2 screens to Windows/iOS with guarded platform-specific settings."""
     candidates = [android_source_root, android_source_root / "MijnGevoel-Android"]
     android_app = next((root / "MijnGevoel.Android" for root in candidates
                         if (root / "MijnGevoel.Android" / "FeaturePage.cs").is_file()), None)
     if android_app is None:
         raise FileNotFoundError(f"Could not find Android FeaturePage.cs under {android_source_root}")
+
     source = (android_app / "FeaturePage.cs").read_text(encoding="utf-8")
     target_path = app_dir / "FeaturePage.cs"
     target = target_path.read_text(encoding="utf-8")
-    for method_name in ("BuildAgenda", "BuildDay", "BuildRoutines", "BuildRoutineReminders", "BuildAdultPlanning"):
+
+    # Feature visibility settings and the dashboard share this same catalog.
+    catalog_path = android_app / "FeatureCatalog.cs"
+    if not catalog_path.is_file():
+        raise FileNotFoundError(f"Could not find Android FeatureCatalog.cs: {catalog_path}")
+    catalog = catalog_path.read_text(encoding="utf-8").replace(
+        "namespace MijnGevoel.AndroidApp;", f"namespace {namespace};", 1
+    )
+    wellbeing_entry = '        new(FeatureKind.Wellbeing, "Mijn welzijn", "🌱", "Doelen en zelfstandigheid", "Houd zelfgekozen welzijnsnotities bij."),'
+    extra_entries = """        new(FeatureKind.CommunicationBoard, "Mijn communicatiebord", "💬", "Communicatie en steun", "Gebruik tekst en afbeeldingen om aan te geven wat je nodig hebt."),
+        new(FeatureKind.ReadAloud, "Voorlezen", "🔊", "Toegankelijkheid", "Laat tekst voorlezen waar dit wordt ondersteund."),
+        new(FeatureKind.RoutineMedia, "Media bij stappenplan", "🎧", "Mijn dag en planning", "Koppel afbeeldingen en audio aan stappen."),
+        new(FeatureKind.MoodReminders, "Gevoelsherinneringen", "💛", "Mijn gevoel en rust", "Stel zelf herinneringen in om even in te checken."),
+        new(FeatureKind.DifficultMomentPlan, "Plan voor moeilijke momenten", "🌿", "Mijn gevoel en rust", "Bewaar persoonlijke stappen die je kunnen helpen."),
+        new(FeatureKind.SecureSync, "Versleutelde overdracht", "🔐", "Communicatie en steun", "Zet geselecteerde informatie bewust en versleuteld over."),
+        new(FeatureKind.SupportPermissions, "Toestemming begeleiders", "👥", "Communicatie en steun", "Bekijk en beheer toestemming voor ondersteuning."),
+        new(FeatureKind.SupportHandoff, "Overdracht naar begeleider", "📨", "Communicatie en steun", "Maak een overzicht voor een afgesproken overdracht."),
+        new(FeatureKind.BackupHealth, "Back-upcontrole", "🛡️", "Profiel, privacy en hulp", "Controleer de leesbaarheid en integriteit van een back-up."),
+        new(FeatureKind.AccessibilityAudit, "Toegankelijkheidscontrole", "♿", "Profiel, privacy en hulp", "Loop de belangrijkste toegankelijkheidsinstellingen na."),
+        new(FeatureKind.CloudSync, "Cloudsync tussen apparaten", "☁️", "Profiel, privacy en hulp", "Synchroniseer versleutelde gegevens tussen gekoppelde apparaten.")
+"""
+    if "new(FeatureKind.CommunicationBoard" not in catalog:
+        if catalog.count(wellbeing_entry) != 1:
+            raise RuntimeError("Could not locate the Wellbeing entry in FeatureCatalog.cs")
+        catalog = catalog.replace(wellbeing_entry, wellbeing_entry + "\n" + extra_entries.rstrip(), 1)
+    (app_dir / "FeatureCatalog.cs").write_text(catalog, encoding="utf-8")
+
+    method_names = (
+        "BuildStoplicht", "BuildStoplichtHistory", "BuildAgenda", "BuildDay",
+        "BuildRoutines", "BuildRoutineReminders", "BuildBreath", "BuildCalm",
+        "BuildSensory", "BuildBody", "BuildMoodHistory", "BuildDailyCheckIn",
+        "BuildMoodCalendar", "BuildMoodInsights", "BuildFeelingWords",
+        "BuildCards", "BuildTalkPrep", "BuildSafetyPlan", "BuildShare",
+        "BuildDraw", "BuildGallery", "BuildPrivacy", "BuildWeek", "BuildSettings",
+        "BuildProfile", "BuildYouthSupport", "BuildAdultPlanning", "BuildHelp"
+    )
+
+    for method_name in method_names:
         _, _, modern_method = extract_csharp_method(source, method_name)
+
         if method_name == "BuildRoutineReminders":
             modern_method = modern_method.replace(
                 "await RoutineReminderNotifications.EnsurePermissionAsync()",
@@ -645,13 +695,46 @@ def sync_portable_feature_methods(android_source_root: Path, app_dir: Path) -> N
             modern_method = modern_method.replace(
                 "Routine opgeslagen, maar meldingen zijn niet toegestaan. Zet meldingen aan in de Android-instellingen van MoodPress.",
                 "Routine opgeslagen. Op dit apparaat kunnen meldingen beperkt zijn; controleer de beschikbare meldingsinstellingen.")
+            modern_method = modern_method.replace(
+                "Android kan een melding als pop-up tonen als meldingen zijn toegestaan en je meldingsinstellingen dit toelaten. Zet meldingen voor MoodPress op 'Waarschuwen' en geef toestemming voor meldingen. Geluid kan worden tegengehouden door stille modus of Niet storen.",
+                "Meldingen zijn afhankelijk van de instellingen van je apparaat. Geluid kan worden tegengehouden door stille modus of Niet storen.")
             if "Android.App.Application.Context" in modern_method:
                 raise RuntimeError("The platform-neutral reminder screen still contains Android-only code.")
+
+        elif method_name == "BuildSettings":
+            home_start = '        AddLabel("Snelkoppelingen op Home", title: true);'
+            home_end = '        AddLabel("Zichtbare functies", title: true);'
+            a = modern_method.find(home_start)
+            b = modern_method.find(home_end, a + len(home_start)) if a >= 0 else -1
+            if a < 0 or b < 0:
+                raise RuntimeError("Could not locate the Home shortcut section in Android BuildSettings.")
+            replacement = '''        AddLabel("Snelkoppelingen op Home", title: true);
+        AddLabel("Snelkoppelingen op het Android-startscherm worden daar beheerd. Op Windows en iOS vind je je functies via het overzicht.", muted: true);
+
+'''
+            modern_method = modern_method[:a] + replacement + modern_method[b:]
+            modern_method = modern_method.replace(
+                "AppSession.SaveSettings(); AndroidScreenPrivacy.Apply(capture.IsToggled);",
+                "AppSession.SaveSettings(); ApplyPlatformScreenPrivacy(capture.IsToggled);")
+            modern_method = modern_method.replace(
+                "FocusTimerNotifications.Cancel(Android.App.Application.Context);",
+                "#if ANDROID\n                FocusTimerNotifications.Cancel(Android.App.Application.Context);\n                #endif")
+            modern_method = modern_method.replace(
+                'RoutineReminderNotifications.Sync(Android.App.Application.Context, Array.Empty<RoutineReminder>());',
+                "SyncMoodReminderNotifications();")
+            modern_method = modern_method.replace(
+                "Op Android voorkomt deze optie de meeste screenshots en schermopnames via de beveiligde vensterinstelling. Een tweede camera kan dit niet voorkomen.",
+                "Het blokkeren van schermafbeeldingen is afhankelijk van het platform; geen enkele instelling kan een tweede camera voorkomen.")
+        elif method_name == "BuildPrivacy":
+            modern_method = modern_method.replace(
+                "Je gegevens worden versleuteld opgeslagen in de privé-appmap van Android. Als je de app verwijdert, kan Android die map verwijderen. Maak eerst een back-up als je gegevens wilt bewaren.",
+                "Je gegevens worden versleuteld opgeslagen in de privégegevensmap van dit apparaat. Als je de app verwijdert, kunnen lokale gegevens worden verwijderd. Maak eerst een back-up als je gegevens wilt bewaren.")
+
         start, end, _ = extract_csharp_method(target, method_name)
         target = target[:start] + modern_method + target[end:]
         print(f"Ported {method_name} from Android 2.5.2 into {app_dir.name}")
-    target_path.write_text(target, encoding="utf-8")
 
+    target_path.write_text(target, encoding="utf-8")
 
 def patch_timer_and_routine_progress(app_dir: Path) -> None:
     """Backfill durable timer state and resumable routine steps into the older platform UI."""
@@ -812,7 +895,7 @@ def main() -> int:
     patch_app_session(app_dir)
     patch_dashboard(app_dir)
     patch_feature_routing(app_dir, namespace, args.repo_root.resolve(), core_dir)
-    sync_portable_feature_methods(args.android_source_root.resolve(), app_dir)
+    sync_portable_feature_methods(args.android_source_root.resolve(), app_dir, namespace)
     patch_timer_and_routine_progress(app_dir)
     # Validate the full accessible journal insertion, including platform-specific delete flows.
     patch_journal_draft_and_dictation(app_dir, args.target)
