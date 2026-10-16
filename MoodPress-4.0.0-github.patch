@@ -1,6 +1,6 @@
 diff -ruN moodpress_base_flat/.github/workflows/moodpress-4-android.yml moodpress4_build/.github/workflows/moodpress-4-android.yml
 --- moodpress_base_flat/.github/workflows/moodpress-4-android.yml	1970-01-01 00:00:00.000000000 +0000
-+++ moodpress4_build/.github/workflows/moodpress-4-android.yml	2026-10-16 10:21:47.000000000 +0000
++++ moodpress4_build/.github/workflows/moodpress-4-android.yml	2026-10-16 11:40:27.161214028 +0000
 @@ -0,0 +1,121 @@
 +name: MoodPress 4.0 Android — telefoon en tablet
 +
@@ -15,17 +15,17 @@ diff -ruN moodpress_base_flat/.github/workflows/moodpress-4-android.yml moodpres
 +    runs-on: ubuntu-latest
 +    steps:
 +      - name: Checkout broncode
-+        uses: actions/checkout@v4
++        uses: actions/checkout@v7
 +
 +      - name: Installeer .NET SDK
-+        uses: actions/setup-dotnet@v4
++        uses: actions/setup-dotnet@v6
 +        with:
 +          dotnet-version: |
 +            8.0.x
 +            10.0.x
 +
 +      - name: Installeer Java 17
-+        uses: actions/setup-java@v4
++        uses: actions/setup-java@v6
 +        with:
 +          distribution: microsoft
 +          java-version: '17'
@@ -113,7 +113,7 @@ diff -ruN moodpress_base_flat/.github/workflows/moodpress-4-android.yml moodpres
 +          ls -lh
 +
 +      - name: Upload de vier Android-releases
-+        uses: actions/upload-artifact@v4
++        uses: actions/upload-artifact@v7
 +        with:
 +          name: MoodPress-4.0.0-Android-telefoon-tablet
 +          path: artifacts/*
@@ -125,7 +125,7 @@ diff -ruN moodpress_base_flat/.github/workflows/moodpress-4-android.yml moodpres
 +        run: rm -f "$RUNNER_TEMP/moodpress-release.keystore"
 diff -ruN moodpress_base_flat/MOODPRESS-4.0-START-HIER.md moodpress4_build/MOODPRESS-4.0-START-HIER.md
 --- moodpress_base_flat/MOODPRESS-4.0-START-HIER.md	1970-01-01 00:00:00.000000000 +0000
-+++ moodpress4_build/MOODPRESS-4.0-START-HIER.md	2026-10-16 10:13:30.000000000 +0000
++++ moodpress4_build/MOODPRESS-4.0-START-HIER.md	2026-10-16 11:38:43.665725636 +0000
 @@ -0,0 +1,16 @@
 +# MoodPress 4.0.0 — start hier
 +
@@ -214,8 +214,8 @@ diff -ruN moodpress_base_flat/MijnGevoel.Android/FeatureCatalog.cs moodpress4_bu
          new(FeatureKind.Help, "Hulp", "❓", "Profiel, privacy en hulp", "Lees uitleg over de app.")
 diff -ruN moodpress_base_flat/MijnGevoel.Android/FeaturePage.MoodPress40.cs moodpress4_build/MijnGevoel.Android/FeaturePage.MoodPress40.cs
 --- moodpress_base_flat/MijnGevoel.Android/FeaturePage.MoodPress40.cs	1970-01-01 00:00:00.000000000 +0000
-+++ moodpress4_build/MijnGevoel.Android/FeaturePage.MoodPress40.cs	2026-10-16 11:25:39.050247038 +0000
-@@ -0,0 +1,945 @@
++++ moodpress4_build/MijnGevoel.Android/FeaturePage.MoodPress40.cs	2026-10-16 11:40:25.678013965 +0000
+@@ -0,0 +1,946 @@
 +using System.Globalization;
 +using System.IO.Compression;
 +using System.Security.Cryptography;
@@ -419,7 +419,8 @@ diff -ruN moodpress_base_flat/MijnGevoel.Android/FeaturePage.MoodPress40.cs mood
 +
 +    async Task PickBoardPhotoAsync()
 +    {
-+        var photo = await MediaPicker.Default.PickPhotoAsync();
++        var photos = await MediaPicker.Default.PickPhotosAsync(new MediaPickerOptions { SelectionLimit = 1 });
++        var photo = photos.FirstOrDefault();
 +        if (photo is null) return;
 +        await using var stream = await photo.OpenReadAsync();
 +        var bytes = await ReadLimitedAsync(stream, 2 * 1024 * 1024);
@@ -562,7 +563,8 @@ diff -ruN moodpress_base_flat/MijnGevoel.Android/FeaturePage.MoodPress40.cs mood
 +
 +    async Task PickRoutineStepPhotoAsync()
 +    {
-+        var photo = await MediaPicker.Default.PickPhotoAsync(); if (photo is null) return;
++        var photos = await MediaPicker.Default.PickPhotosAsync(new MediaPickerOptions { SelectionLimit = 1 });
++        var photo = photos.FirstOrDefault(); if (photo is null) return;
 +        await using var stream = await photo.OpenReadAsync(); _stepPhotoData = await ReadLimitedAsync(stream, 2 * 1024 * 1024);
 +        _stepPhotoPreview!.Source = ImageSource.FromStream(() => new MemoryStream(_stepPhotoData)); _stepPhotoPreview.IsVisible = true;
 +        _stepMediaStatus!.Text = "Foto gekozen. Bewaar om hem aan deze stap te koppelen.";
@@ -1160,7 +1162,6 @@ diff -ruN moodpress_base_flat/MijnGevoel.Android/FeaturePage.MoodPress40.cs mood
 +    public static readonly Guid Recurring = Guid.Parse("bfb53a02-4dfd-4a92-b251-80d102bed340");
 +}
 +
-+/// <summary>Encrypts the whole cross-device archive before it leaves the app cache.</summary>
 diff -ruN moodpress_base_flat/MijnGevoel.Android/FeaturePage.cs moodpress4_build/MijnGevoel.Android/FeaturePage.cs
 --- moodpress_base_flat/MijnGevoel.Android/FeaturePage.cs	2026-10-15 06:30:40.000000000 +0000
 +++ moodpress4_build/MijnGevoel.Android/FeaturePage.cs	2026-10-16 11:06:30.000000000 +0000
@@ -1798,7 +1799,7 @@ diff -ruN moodpress_base_flat/MijnGevoel.Android/MijnGevoel.Android.csproj moodp
      <!-- Keep AndroidX KTX packages aligned with the MAUI 10 transitive package versions to avoid NU1608 mismatches. -->
 diff -ruN moodpress_base_flat/MijnGevoel.Android/Platforms/Android/MoodPressWidgetProvider.cs moodpress4_build/MijnGevoel.Android/Platforms/Android/MoodPressWidgetProvider.cs
 --- moodpress_base_flat/MijnGevoel.Android/Platforms/Android/MoodPressWidgetProvider.cs	1970-01-01 00:00:00.000000000 +0000
-+++ moodpress4_build/MijnGevoel.Android/Platforms/Android/MoodPressWidgetProvider.cs	2026-10-16 11:03:22.000000000 +0000
++++ moodpress4_build/MijnGevoel.Android/Platforms/Android/MoodPressWidgetProvider.cs	2026-10-16 11:40:26.061474976 +0000
 @@ -0,0 +1,33 @@
 +using Android.App;
 +using Android.Appwidget;
@@ -1813,7 +1814,7 @@ diff -ruN moodpress_base_flat/MijnGevoel.Android/Platforms/Android/MoodPressWidg
 +[MetaData("android.appwidget.provider", Resource = "@xml/moodpress_widget_info")]
 +public sealed class MoodPressWidgetProvider : AppWidgetProvider
 +{
-+    public override void OnUpdate(Context context, AppWidgetManager appWidgetManager, int[] appWidgetIds)
++    public override void OnUpdate(Context? context, AppWidgetManager? appWidgetManager, int[]? appWidgetIds)
 +    {
 +        if (context is null || appWidgetManager is null || appWidgetIds is null) return;
 +        foreach (var appWidgetId in appWidgetIds)
@@ -2462,7 +2463,7 @@ diff -ruN moodpress_base_flat/MijnGevoel.Tests/SecurityTests.cs moodpress4_build
 +}
 diff -ruN moodpress_base_flat/README-ANDROID.md moodpress4_build/README-ANDROID.md
 --- moodpress_base_flat/README-ANDROID.md	2026-10-15 06:30:40.000000000 +0000
-+++ moodpress4_build/README-ANDROID.md	2026-10-16 10:13:52.000000000 +0000
++++ moodpress4_build/README-ANDROID.md	2026-10-16 11:38:43.729722848 +0000
 @@ -1,4 +1,6 @@
 -# MoodPress Android 2.5.0 — release candidate
 +# MoodPress Android 4.0.0 — build candidate
@@ -2485,7 +2486,7 @@ diff -ruN moodpress_base_flat/README-ANDROID.md moodpress4_build/README-ANDROID.
 +- Raadpleeg `MOODPRESS-4.0-START-HIER.md` en `RELEASE-NOTES-4.0.0.md`. Een groene build en handmatige acceptatietests zijn nog vereist.
 diff -ruN moodpress_base_flat/README.md moodpress4_build/README.md
 --- moodpress_base_flat/README.md	2026-10-15 06:30:40.000000000 +0000
-+++ moodpress4_build/README.md	2026-10-16 10:14:16.000000000 +0000
++++ moodpress4_build/README.md	2026-10-16 11:38:44.129705415 +0000
 @@ -111,3 +111,7 @@
  Lees eerst `docs/MOODPRESS-ONTWIKKELPLAN-STATUS-2.4.0.md`, daarna `docs/MOODPRESS-VALIDATIERAPPORT-2.4.0.md` en `docs/ANDROID-ACCEPTATIETEST-2.4.0.md`. Dit zijn broncode- en buildbestanden, geen vooraf gebouwde APK. Run GitHub Actions en voer de apparaat-/acceptatietest uit voordat deze versie gepubliceerd wordt.
  
@@ -2496,7 +2497,7 @@ diff -ruN moodpress_base_flat/README.md moodpress4_build/README.md
 +See `MOODPRESS-4.0-START-HIER.md` for the four Android artifacts and build workflow. This source package has not yet been compiled in this environment.
 diff -ruN moodpress_base_flat/RELEASE-NOTES-4.0.0.md moodpress4_build/RELEASE-NOTES-4.0.0.md
 --- moodpress_base_flat/RELEASE-NOTES-4.0.0.md	1970-01-01 00:00:00.000000000 +0000
-+++ moodpress4_build/RELEASE-NOTES-4.0.0.md	2026-10-16 11:04:45.000000000 +0000
++++ moodpress4_build/RELEASE-NOTES-4.0.0.md	2026-10-16 11:38:44.105706460 +0000
 @@ -0,0 +1,60 @@
 +# MoodPress 4.0.0 — Android telefoon en tablet
 +
@@ -2950,8 +2951,8 @@ diff -ruN moodpress_base_flat/docs/MOODPRESS-4.0.0-NIEUWSTE-FUNCTIES.md moodpres
 +- `MoodPress-Android-compleet-4.0.0-nieuwste-functies-SHA256SUMS.txt`: SHA-256-controlesom van het ZIP-bestand.
 diff -ruN moodpress_base_flat/scripts/check-moodpress-4.sh moodpress4_build/scripts/check-moodpress-4.sh
 --- moodpress_base_flat/scripts/check-moodpress-4.sh	1970-01-01 00:00:00.000000000 +0000
-+++ moodpress4_build/scripts/check-moodpress-4.sh	2026-10-16 11:08:48.000000000 +0000
-@@ -0,0 +1,51 @@
++++ moodpress4_build/scripts/check-moodpress-4.sh	2026-10-16 11:40:27.553196947 +0000
+@@ -0,0 +1,63 @@
 +#!/usr/bin/env bash
 +set -euo pipefail
 +project="MijnGevoel.Android/MijnGevoel.Android.csproj"
@@ -3003,3 +3004,15 @@ diff -ruN moodpress_base_flat/scripts/check-moodpress-4.sh moodpress4_build/scri
 +grep -q 'AppWidgetProvider' 'MijnGevoel.Android/Platforms/Android/MoodPressWidgetProvider.cs'
 +grep -q 'appwidget-provider' 'MijnGevoel.Android/Platforms/Android/Resources/xml/moodpress_widget_info.xml'
 +echo "MoodPress 4.0 static and extended feature checks passed."
++
++# Regression checks for warnings found in the first successful Android build.
++widget="MijnGevoel.Android/Platforms/Android/MoodPressWidgetProvider.cs"
++grep -q 'OnUpdate(Context? context, AppWidgetManager? appWidgetManager, int\[\]? appWidgetIds)' "$widget"
++grep -q 'PickPhotosAsync(new MediaPickerOptions { SelectionLimit = 1 })' "$extra"
++if grep -q 'PickPhotoAsync(' "$extra"; then echo 'Obsolete single-photo picker call remains.' >&2; exit 1; fi
++if grep -q '^/// <summary>Encrypts the whole cross-device archive' "$extra"; then echo 'Dangling XML doc comment remains.' >&2; exit 1; fi
++grep -q 'actions/checkout@v7' "$workflow"
++grep -q 'actions/setup-dotnet@v6' "$workflow"
++grep -q 'actions/setup-java@v6' "$workflow"
++grep -q 'actions/upload-artifact@v7' "$workflow"
++echo "MoodPress warning-regression checks passed."
