@@ -133,6 +133,10 @@ jobs:
                 artifact="$(find "$out" -type f -iname '*-signed.aab' -print -quit)"
               else
                 artifact="$(find "$out" -type f -iname '*-signed.apk' -print -quit)"
+                if [[ -z "$artifact" ]]; then
+                  # dotnet publish can place an already-signed APK at the plain .apk path.
+                  artifact="$(find "$out" -type f -iname '*.apk' -print -quit)"
+                fi
               fi
               if [[ -z "$artifact" || ! -f "$artifact" ]]; then
                 echo "No signed $format artifact found for $target; generated files:" >&2
