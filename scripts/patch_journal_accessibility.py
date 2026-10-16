@@ -88,6 +88,11 @@ def patch_journal_draft_and_dictation(app_dir: Path, target: str) -> None:
 
     page = app_dir / "FeaturePage.cs"
     text = page.read_text(encoding="utf-8")
+    if "using Microsoft.Maui.Devices;" not in text:
+        marker_devices = "using Microsoft.Maui.ApplicationModel;"
+        if text.count(marker_devices) != 1:
+            raise RuntimeError(f"Could not locate MAUI application-model namespace in {page}")
+        text = text.replace(marker_devices, marker_devices + "\\nusing Microsoft.Maui.Devices;", 1)
     if "using CommunityToolkit.Maui.Media;" not in text:
         marker = "using Plugin.Maui.Audio;"
         if text.count(marker) != 1:
