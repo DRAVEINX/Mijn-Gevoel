@@ -5,6 +5,7 @@ namespace __MOODPRESS_NAMESPACE__;
 
 public sealed partial class FeaturePage
 {
+    Guid? _editingAdultGoalId;
     // Kept as a shared partial so Windows and iOS receive the Android 2.5.2
     // wellbeing feature without replacing their platform-specific page code.
     void BuildWellbeing()
