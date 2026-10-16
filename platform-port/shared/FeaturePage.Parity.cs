@@ -5,6 +5,8 @@ namespace __MOODPRESS_NAMESPACE__;
 
 public sealed partial class FeaturePage
 {
+    static readonly (FeatureKind Kind, string Label, string Group)[] FeatureVisibilityOptions =
+        FeatureCatalog.All.Select(x => (Kind: x.Kind, Label: x.Label, Group: x.Group)).ToArray();
     Guid? _editingAdultGoalId;
     // Kept as a shared partial so Windows and iOS receive the Android 2.5.2
     // wellbeing feature without replacing their platform-specific page code.
@@ -269,5 +271,11 @@ public sealed partial class FeaturePage
         {
             status.Text = "Gepauzeerd.";
         }
+    }
+    void ApplyPlatformScreenPrivacy(bool enabled)
+    {
+#if ANDROID
+        AndroidScreenPrivacy.Apply(enabled);
+#endif
     }
 }
