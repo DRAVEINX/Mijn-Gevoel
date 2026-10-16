@@ -661,7 +661,7 @@ def sync_portable_feature_methods(android_source_root: Path, app_dir: Path, name
         new(FeatureKind.SupportHandoff, "Overdracht naar begeleider", "📨", "Communicatie en steun", "Maak een overzicht voor een afgesproken overdracht."),
         new(FeatureKind.BackupHealth, "Back-upcontrole", "🛡️", "Profiel, privacy en hulp", "Controleer de leesbaarheid en integriteit van een back-up."),
         new(FeatureKind.AccessibilityAudit, "Toegankelijkheidscontrole", "♿", "Profiel, privacy en hulp", "Loop de belangrijkste toegankelijkheidsinstellingen na."),
-        new(FeatureKind.CloudSync, "Cloudsync tussen apparaten", "☁️", "Profiel, privacy en hulp", "Synchroniseer versleutelde gegevens tussen gekoppelde apparaten.")
+        new(FeatureKind.CloudSync, "Cloudsync tussen apparaten", "☁️", "Profiel, privacy en hulp", "Synchroniseer versleutelde gegevens tussen gekoppelde apparaten."),
 """
     if "new(FeatureKind.CommunicationBoard" not in catalog:
         if catalog.count(wellbeing_entry) != 1:
