@@ -11,6 +11,7 @@ import re
 from pathlib import Path
 import shutil
 import sys
+from patch_journal_accessibility import patch_journal_draft_and_dictation
 
 MAX_RECORD_BYTES = 64 * 1024 * 1024
 
@@ -638,6 +639,7 @@ def main() -> int:
     patch_app_session(app_dir)
     patch_dashboard(app_dir)
     patch_feature_routing(app_dir, namespace, args.repo_root.resolve(), core_dir)
+    patch_journal_draft_and_dictation(app_dir, args.target)
 
     required = [
         app_dir / "CloudSyncClient.cs",
