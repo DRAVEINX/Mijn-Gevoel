@@ -432,7 +432,7 @@ def patch_feature_routing(app_dir: Path, namespace: str, repo_root: Path, core_d
         start < end ? time >= start && time < end : time >= start || time < end;
 #endif
 """
-            if "EnsureMoodReminderPermissionAsync()" not in content:
+            if "async Task<bool> EnsureMoodReminderPermissionAsync()" not in content:
                 if content.count(helper_marker) != 1:
                     raise RuntimeError(f"Could not find MoodReminderIds insertion point in {name}")
                 content = content.replace(helper_marker, "\n" + helpers + helper_marker, 1)
