@@ -5,6 +5,7 @@ namespace __MOODPRESS_NAMESPACE__;
 
 public sealed partial class FeaturePage
 {
+    Guid? _editingAdultGoalId;
     static readonly (FeatureKind Kind, string Label, string Group)[] FeatureVisibilityOptions =
         FeatureCatalog.All.Select(x => (Kind: x.Kind, Label: x.Label, Group: x.Group)).ToArray();
     // Kept as a shared partial so Windows and iOS receive the Android 2.5.2
