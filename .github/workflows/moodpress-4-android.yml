@@ -1,0 +1,184 @@
+name: MoodPress 4.0 Android — telefoon en tablet
+
+on:
+  push:
+    branches:
+      - moodpress-4.0-build
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: moodpress-4-android-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Test en bouw MoodPress 4.0 voor telefoon en tablet
+    runs-on: ubuntu-latest
+    steps:
+      - name: Haal de aparte build-branch op
+        uses: actions/checkout@v4
+
+      - name: Controleer en patch de bestaande MoodPress 2.5.2-broncode
+        shell: bash
+        run: |
+          set -euo pipefail
+          base_zip="MoodPress-Android-compleet-2.5.2.zip"
+          test -f "$base_zip" || { echo "Broncodebestand ontbreekt: $base_zip" >&2; exit 1; }
+          test -f MoodPress-4.0.0-github.patch || { echo "De 4.0-patch ontbreekt." >&2; exit 1; }
+          unzip -t "$base_zip"
+          mkdir -p source
+          unzip -q "$base_zip" -d source
+          test -d source/MijnGevoel-Android || { echo "Verwachte broncodemap ontbreekt." >&2; exit 1; }
+          patch --batch --forward -p1 -d source/MijnGevoel-Android < MoodPress-4.0.0-github.patch
+          cd source/MijnGevoel-Android
+          bash scripts/check-moodpress-4.sh
+          grep -q '<ApplicationDisplayVersion>4.0.0</ApplicationDisplayVersion>' MijnGevoel.Android/MijnGevoel.Android.csproj
+          grep -q '<ApplicationVersion>35</ApplicationVersion>' MijnGevoel.Android/MijnGevoel.Android.csproj
+          echo "MoodPress 4.0 source patch applied and static checks passed."
+
+      - name: Installeer .NET SDK 8 en 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - name: Installeer Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: microsoft
+          java-version: '17'
+
+      - name: Installeer MAUI Android-workload
+        run: dotnet workload install maui-android
+
+      - name: Herstel en voer automatische tests uit
+        working-directory: source/MijnGevoel-Android
+        run: |
+          set -euo pipefail
+          dotnet restore MijnGevoel.Tests/MijnGevoel.Tests.csproj
+          dotnet test MijnGevoel.Tests/MijnGevoel.Tests.csproj --configuration Release --no-restore --logger "console;verbosity=normal"
+
+      - name: Controleer of release-ondertekening beschikbaar is
+        id: signing
+        shell: bash
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          if [[ -n "${ANDROID_KEYSTORE_BASE64:-}" && -n "${ANDROID_KEYSTORE_PASSWORD:-}" && -n "${ANDROID_KEY_PASSWORD:-}" && -n "${ANDROID_KEY_ALIAS:-}" ]]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+            echo "Release signing secrets are configured."
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "Signing secrets are incomplete; only installable debug APKs will be produced in this run."
+          fi
+
+      - name: Decodeer de bestaande Android-ondertekeningssleutel
+        if: steps.signing.outputs.ready == 'true'
+        shell: bash
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/moodpress-release.keystore"
+          test -s "$RUNNER_TEMP/moodpress-release.keystore"
+          chmod 600 "$RUNNER_TEMP/moodpress-release.keystore"
+
+      - name: Bouw vier ondertekende releasebestanden
+        if: steps.signing.outputs.ready == 'true'
+        working-directory: source/MijnGevoel-Android
+        shell: bash
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          set -euo pipefail
+          project="MijnGevoel.Android/MijnGevoel.Android.csproj"
+          mkdir -p "$GITHUB_WORKSPACE/artifacts"
+          for target in Phone Tablet; do
+            for format in apk aab; do
+              out="$RUNNER_TEMP/moodpress-${target}-${format}"
+              rm -rf "$out"
+              dotnet publish "$project" \
+                --configuration Release \
+                --framework net10.0-android \
+                -p:MoodPressTarget="$target" \
+                -p:AndroidPackageFormat="$format" \
+                -p:AndroidKeyStore=true \
+                "-p:AndroidSigningKeyStore=$RUNNER_TEMP/moodpress-release.keystore" \
+                "-p:AndroidSigningKeyAlias=$ANDROID_KEY_ALIAS" \
+                -p:AndroidSigningKeyPass=env:ANDROID_KEY_PASSWORD \
+                -p:AndroidSigningStorePass=env:ANDROID_KEYSTORE_PASSWORD \
+                --output "$out"
+              artifact="$(find "$out" -type f -iname "*.$format" -print -quit)"
+              if [[ -z "$artifact" || ! -f "$artifact" ]]; then
+                echo "Geen $format aangetroffen voor $target." >&2
+                find "$out" -type f -print || true
+                exit 1
+              fi
+              cp "$artifact" "$GITHUB_WORKSPACE/artifacts/MoodPress-4.0.0-${target}.${format}"
+            done
+          done
+          cd "$GITHUB_WORKSPACE/artifacts"
+          sha256sum MoodPress-4.0.0-Phone.apk MoodPress-4.0.0-Phone.aab MoodPress-4.0.0-Tablet.apk MoodPress-4.0.0-Tablet.aab | tee SHA256SUMS.txt
+          ls -lh
+
+      - name: Bouw een debug-APK voor telefoon en tablet als release-sleutels ontbreken
+        if: steps.signing.outputs.ready != 'true'
+        working-directory: source/MijnGevoel-Android
+        shell: bash
+        run: |
+          set -euo pipefail
+          project="MijnGevoel.Android/MijnGevoel.Android.csproj"
+          mkdir -p "$GITHUB_WORKSPACE/artifacts"
+          for target in Phone Tablet; do
+            out="$RUNNER_TEMP/moodpress-${target}-debug"
+            rm -rf "$out"
+            appid="nl.mijngevoel.app.debug"
+            title="MoodPress Phone Test"
+            if [[ "$target" == "Tablet" ]]; then appid="nl.mijngevoel.app.tablet.debug"; title="MoodPress Tablet Test"; fi
+            dotnet publish "$project" \
+              --configuration Debug \
+              --framework net10.0-android \
+              -p:MoodPressTarget="$target" \
+              -p:AndroidPackageFormat=apk \
+              -p:ApplicationId="$appid" \
+              "-p:ApplicationTitle=$title" \
+              --output "$out"
+            apk="$(find "$out" -type f -iname '*.apk' -print -quit)"
+            test -n "$apk" && test -f "$apk"
+            cp "$apk" "$GITHUB_WORKSPACE/artifacts/MoodPress-4.0.0-${target}-DEBUG.apk"
+          done
+          cd "$GITHUB_WORKSPACE/artifacts"
+          sha256sum MoodPress-4.0.0-Phone-DEBUG.apk MoodPress-4.0.0-Tablet-DEBUG.apk | tee SHA256SUMS.txt
+          printf '%s\n' 'Alleen debug-APK-bestanden zijn gemaakt; voor ondertekende APK/AAB-releases moeten de vier ANDROID_* GitHub Secrets zijn ingesteld.' > BUILD-STATUS.txt
+          ls -lh
+
+      - name: Upload MoodPress 4.0-releasebestanden
+        if: steps.signing.outputs.ready == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: MoodPress-4.0.0-Android-Phone-Tablet-Release
+          path: artifacts/*
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload MoodPress 4.0-debugbestanden
+        if: steps.signing.outputs.ready != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: MoodPress-4.0.0-Android-Phone-Tablet-Debug
+          path: artifacts/*
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Verwijder tijdelijke ondertekeningssleutel
+        if: always()
+        run: rm -f "$RUNNER_TEMP/moodpress-release.keystore"
