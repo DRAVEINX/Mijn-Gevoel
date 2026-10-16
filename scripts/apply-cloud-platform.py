@@ -665,7 +665,7 @@ def main() -> int:
         destination = app_dir / name
         destination.write_text(source.replace("__MOODPRESS_NAMESPACE__", namespace), encoding="utf-8")
 
-    parity_path = repo_root / "platform-port" / "shared" / "FeaturePage.Parity.cs"
+    parity_path = args.repo_root.resolve() / "platform-port" / "shared" / "FeaturePage.Parity.cs"
     if not parity_path.is_file():
         raise FileNotFoundError(f"Shared parity UI source is missing: {parity_path}")
     parity_source = parity_path.read_text(encoding="utf-8")
