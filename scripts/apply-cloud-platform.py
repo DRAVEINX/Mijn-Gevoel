@@ -49,7 +49,7 @@ def add_vault_validator(vault_file: Path) -> None:
         byte[]? plain = null;
         try
         {{
-            plain = Crypto.Open(_key, blob, $"{kind}:{{id:N}}");
+            plain = Crypto.Open(_key, blob, $"{{kind}}:{{id:N}}");
             using var document = JsonDocument.Parse(plain);
             return true;
         }}
