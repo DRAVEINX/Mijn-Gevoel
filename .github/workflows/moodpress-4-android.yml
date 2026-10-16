@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - moodpress-4.0-build
+      - moodpress-cloud-portal-crossplatform
   workflow_dispatch:
 
 permissions:
