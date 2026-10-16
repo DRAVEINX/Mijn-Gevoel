@@ -70,6 +70,142 @@ jobs:
         run: dotnet build MijnGevoel.Android/MijnGevoel.Android.csproj --configuration Release --framework net10.0-android --no-restore -p:MoodPressTarget=Tablet --warnaserror
 
 
+
+      - name: Check Android release-signing configuration
+        id: android_signing
+        shell: bash
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          if [[ -n "${ANDROID_KEYSTORE_BASE64:-}" && -n "${ANDROID_KEYSTORE_PASSWORD:-}" && -n "${ANDROID_KEY_PASSWORD:-}" && -n "${ANDROID_KEY_ALIAS:-}" ]]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+            echo "All Android release-signing settings are present."
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "Signing settings are incomplete. Only clearly labelled DEBUG preview packages will be produced."
+          fi
+
+      - name: Prepare Android release keystore
+        if: steps.android_signing.outputs.ready == 'true'
+        shell: bash
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/moodpress-release.keystore"
+          test -s "$RUNNER_TEMP/moodpress-release.keystore"
+          chmod 600 "$RUNNER_TEMP/moodpress-release.keystore"
+
+      - name: Publish signed phone and tablet APK/AAB packages
+        if: steps.android_signing.outputs.ready == 'true'
+        working-directory: source/MijnGevoel-Android
+        shell: bash
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          set -euo pipefail
+          project="MijnGevoel.Android/MijnGevoel.Android.csproj"
+          out_root="$GITHUB_WORKSPACE/artifacts/android-release"
+          mkdir -p "$out_root"
+          for target in Phone Tablet; do
+            for format in apk aab; do
+              out="$RUNNER_TEMP/moodpress-${target}-${format}"
+              rm -rf "$out"
+              dotnet publish "$project" \
+                --configuration Release \
+                --framework net10.0-android \
+                -p:MoodPressTarget="$target" \
+                -p:AndroidPackageFormat="$format" \
+                -p:AndroidKeyStore=true \
+                "-p:AndroidSigningKeyStore=$RUNNER_TEMP/moodpress-release.keystore" \
+                "-p:AndroidSigningKeyAlias=$ANDROID_KEY_ALIAS" \
+                -p:AndroidSigningKeyPass=env:ANDROID_KEY_PASSWORD \
+                -p:AndroidSigningStorePass=env:ANDROID_KEYSTORE_PASSWORD \
+                --output "$out"
+              artifact="$(find "$out" -type f -iname "*.$format" -print -quit)"
+              if [[ -z "$artifact" || ! -f "$artifact" ]]; then
+                echo "Missing signed $format package for $target." >&2
+                find "$out" -type f -print || true
+                exit 1
+              fi
+              cp "$artifact" "$out_root/MoodPress-4.0.0-${target}.${format}"
+            done
+          done
+          cd "$out_root"
+          sha256sum MoodPress-4.0.0-Phone.apk MoodPress-4.0.0-Phone.aab MoodPress-4.0.0-Tablet.apk MoodPress-4.0.0-Tablet.aab | tee SHA256SUMS.txt
+          ls -lh
+
+      - name: Publish phone and tablet DEBUG preview APK/AAB packages
+        if: steps.android_signing.outputs.ready != 'true'
+        working-directory: source/MijnGevoel-Android
+        shell: bash
+        run: |
+          set -euo pipefail
+          project="MijnGevoel.Android/MijnGevoel.Android.csproj"
+          out_root="$GITHUB_WORKSPACE/artifacts/android-debug"
+          mkdir -p "$out_root"
+          for target in Phone Tablet; do
+            if [[ "$target" == "Phone" ]]; then
+              appid="nl.moodpress.phone.preview"
+              title="MoodPress Phone Preview"
+            else
+              appid="nl.moodpress.tablet.preview"
+              title="MoodPress Tablet Preview"
+            fi
+            for format in apk aab; do
+              out="$RUNNER_TEMP/moodpress-${target}-debug-${format}"
+              rm -rf "$out"
+              dotnet publish "$project" \
+                --configuration Debug \
+                --framework net10.0-android \
+                -p:MoodPressTarget="$target" \
+                -p:AndroidPackageFormat="$format" \
+                -p:AndroidKeyStore=false \
+                -p:ApplicationId="$appid" \
+                "-p:ApplicationTitle=$title" \
+                --output "$out"
+              artifact="$(find "$out" -type f -iname "*.$format" -print -quit)"
+              if [[ -z "$artifact" || ! -f "$artifact" ]]; then
+                echo "Missing DEBUG $format package for $target." >&2
+                find "$out" -type f -print || true
+                exit 1
+              fi
+              cp "$artifact" "$out_root/MoodPress-4.0.0-${target}-DEBUG.${format}"
+            done
+          done
+          cd "$out_root"
+          sha256sum ./* | tee SHA256SUMS.txt
+          printf '%s\n' 'Preview-only builds. Configure all four ANDROID_* GitHub Actions secrets for signed release packages.' > BUILD-STATUS.txt
+          ls -lh
+
+      - name: Upload signed Android phone/tablet release packages
+        if: steps.android_signing.outputs.ready == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: MoodPress-4.0.0-Android-Phone-Tablet-Signed
+          path: artifacts/android-release/*
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload Android phone/tablet DEBUG previews
+        if: steps.android_signing.outputs.ready != 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: MoodPress-4.0.0-Android-Phone-Tablet-DEBUG-Preview
+          path: artifacts/android-debug/*
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Remove temporary Android signing key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/moodpress-release.keystore"
+
+
   platform-source-audit:
     name: Inspect Windows and iOS project structure
     runs-on: ubuntu-latest
