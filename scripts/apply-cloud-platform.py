@@ -188,6 +188,352 @@ def patch_dashboard(app_dir: Path) -> None:
         source = source.replace(ordinary_route, cloud_route + "\n        " + ordinary_route, 1)
     path.write_text(source, encoding="utf-8")
 
+
+def extract_added_patch_file(patch_path: Path, file_name: str) -> str:
+    """Extract a newly-added source file from the checked-in Android 4.0 patch.
+
+    The patch deliberately remains the source of truth, so platform builds work
+    from fresh archive copies instead of mutating the release ZIPs.
+    """
+    lines = patch_path.read_text(encoding="utf-8").splitlines()
+    for index, line in enumerate(lines):
+        if not line.startswith("diff -ruN ") or not line.endswith("/" + file_name):
+            continue
+        end = index + 1
+        while end < len(lines) and not lines[end].startswith("diff -ruN "):
+            end += 1
+        section = lines[index:end]
+        target_header = next((i for i, item in enumerate(section) if item.startswith("+++ ")), None)
+        if target_header is None or section[target_header].endswith("/dev/null"):
+            continue
+        output: list[str] = []
+        in_hunk = False
+        for item in section[target_header + 1:]:
+            if item.startswith("@@ "):
+                in_hunk = True
+                continue
+            if not in_hunk:
+                continue
+            if item.startswith("+") and not item.startswith("+++"):
+                output.append(item[1:])
+            elif item.startswith(" "):
+                output.append(item[1:])
+            elif item.startswith("\\"):
+                continue
+            elif item.startswith("-"):
+                continue
+        content = "\n".join(output) + "\n"
+        if content.strip():
+            return content
+    raise FileNotFoundError(f"Could not extract added {file_name} from {patch_path}")
+
+
+def patch_routine_reminder_model(models_file: Path) -> None:
+    source = models_file.read_text(encoding="utf-8")
+    if "public bool RespectQuietHours { get; init; }" in source:
+        return
+    marker = "    bool SoundEnabled = true);"
+    replacement = """    bool SoundEnabled = true)
+{
+    /// <summary>Temporary single-use reminder such as a 15-minute snooze.</summary>
+    public bool OneTime { get; init; }
+    /// <summary>Local date/time for a one-time reminder.</summary>
+    public DateTime? OneTimeDate { get; init; }
+    /// <summary>Skip this reminder for one local calendar day.</summary>
+    public DateTime? SkipDate { get; init; }
+    /// <summary>Defer reminders that fall inside the chosen quiet interval.</summary>
+    public bool RespectQuietHours { get; init; }
+    public string? QuietStart { get; init; }
+    public string? QuietEnd { get; init; }
+}"""
+    if source.count(marker) != 1:
+        raise RuntimeError(f"Could not find the legacy RoutineReminder record in {models_file}")
+    source = source.replace(marker, replacement, 1)
+    models_marker = 'public record TalkCard(Guid Id, string Emoji, string Text);'
+    additions = """public record CommunicationBoardCard(Guid Id, string Category, string Emoji, string Text, byte[]? PhotoData, DateTime Created);
+public record RoutineStepMedia(Guid Id, Guid RoutineId, int StepIndex, byte[]? PhotoData, byte[]? AudioData, string Narration, DateTime UpdatedAt);
+public record SupportAccessGrant(Guid Id, string Recipient, string Role, string[] Categories, DateTime CreatedAt, DateTime? ExpiresAt, bool Active);
+public record SupportHandoffEntry(Guid Id, DateTime CreatedAt, string SenderRole, string ReceiverRole, string Summary, string[] Topics, bool Acknowledged, DateTime? AcknowledgedAt);
+public record SyncTransferRecord(Guid Id, DateTime CreatedAt, string DeviceLabel, string Action, int ImportedFiles, string Fingerprint, string Result);
+public record BackupHealthRecord(Guid Id, DateTime CreatedAt, string FileName, int ArchiveEntries, string Sha256, bool ArchiveReadable, string Result);
+public record AccessibilityAuditRecord(Guid Id, DateTime CreatedAt, Dictionary<string, bool> Checks, string Notes);"""
+    if "public record CommunicationBoardCard(" not in source:
+        if source.count(models_marker) != 1:
+            raise RuntimeError(f"Could not find the TalkCard model insertion point in {models_file}")
+        source = source.replace(models_marker, models_marker + "\n" + additions, 1)
+    models_file.write_text(source, encoding="utf-8")
+
+
+def patch_support_share_handoff(service_file: Path) -> None:
+    source = service_file.read_text(encoding="utf-8")
+    if "SupportHandoffEntry? Handoff" in source:
+        return
+    source = source.replace(
+        "    public List<YouthSupportEntry> YouthCheckIns { get; init; } = new();",
+        "    public List<YouthSupportEntry> YouthCheckIns { get; init; } = new();\n    public SupportHandoffEntry? Handoff { get; init; }",
+        1)
+    old_signature = "IEnumerable<MoodCheckInEntry>? moodCheckIns = null, IEnumerable<YouthSupportEntry>? youthCheckIns = null)"
+    new_signature = "IEnumerable<MoodCheckInEntry>? moodCheckIns = null, IEnumerable<YouthSupportEntry>? youthCheckIns = null, SupportHandoffEntry? handoff = null)"
+    if old_signature not in source:
+        raise RuntimeError(f"Could not update Create signature in {service_file}")
+    source = source.replace(old_signature, new_signature, 1)
+    source = source.replace(
+        "        if (youth.Any(x => !ValidateYouthCheckIn(x))) throw new ArgumentException(\"Een jongerencheck-in bevat ongeldige gegevens.\");",
+        "        if (youth.Any(x => !ValidateYouthCheckIn(x))) throw new ArgumentException(\"Een jongerencheck-in bevat ongeldige gegevens.\");\n        if (handoff is not null && !ValidateHandoff(handoff)) throw new ArgumentException(\"De overdrachtskaart bevat ongeldige gegevens.\");",
+        1)
+    source = source.replace(
+        "if (plan is null && lights.Count == 0 && routineList.Count == 0 && moods.Count == 0 && youth.Count == 0)",
+        "if (plan is null && lights.Count == 0 && routineList.Count == 0 && moods.Count == 0 && youth.Count == 0 && handoff is null)",
+        1)
+    source = source.replace(
+        "var package = new SupportSharePackage(2, safeFrom, DateTime.Now, plan, lights, routineList)\n        { MoodCheckIns = moods, YouthCheckIns = youth };",
+        "var package = new SupportSharePackage(3, safeFrom, DateTime.Now, plan, lights, routineList)\n        { MoodCheckIns = moods, YouthCheckIns = youth, Handoff = handoff };",
+        1)
+    source = source.replace("p.Version is not (1 or 2)", "p.Version is not (1 or 2 or 3)", 1)
+    source = source.replace(
+        "|| p.MoodCheckIns.Any(x => !ValidateMoodCheckIn(x)) || p.YouthCheckIns.Any(x => !ValidateYouthCheckIn(x))) return false;",
+        "|| p.MoodCheckIns.Any(x => !ValidateMoodCheckIn(x)) || p.YouthCheckIns.Any(x => !ValidateYouthCheckIn(x))\n            || (p.Handoff is not null && !ValidateHandoff(p.Handoff))) return false;",
+        1)
+    source = source.replace(
+        "|| p.MoodCheckIns.Count > 0 || p.YouthCheckIns.Count > 0;",
+        "|| p.MoodCheckIns.Count > 0 || p.YouthCheckIns.Count > 0 || p.Handoff is not null;",
+        1)
+    validator_marker = "    static bool ValidatePlan(SafetyPlan p)"
+    validator = """    static bool ValidateHandoff(SupportHandoffEntry? x) => x is not null
+        && x.Id != Guid.Empty
+        && x.SenderRole is not null && x.SenderRole.Length <= 120
+        && x.ReceiverRole is not null && x.ReceiverRole.Length <= 120
+        && x.Summary is not null && x.Summary.Length <= 4_000
+        && x.Topics is not null && x.Topics.Length <= 50
+        && x.Topics.All(t => t is not null && t.Length <= 120);
+
+"""
+    if source.count(validator_marker) != 1:
+        raise RuntimeError(f"Could not find ValidatePlan in {service_file}")
+    source = source.replace(validator_marker, validator + validator_marker, 1)
+    service_file.write_text(source, encoding="utf-8")
+
+
+def patch_feature_routing(app_dir: Path, namespace: str, repo_root: Path, core_dir: Path) -> None:
+    patch_path = repo_root / "MoodPress-4.0.0-github.patch"
+    source_names = ("FeaturePage.MoodPress40.cs", "FeaturePage.CloudSync.cs")
+    for name in source_names:
+        content = extract_added_patch_file(patch_path, name)
+        content = content.replace("namespace MijnGevoel.AndroidApp;", f"namespace {namespace};", 1)
+        if name == "FeaturePage.MoodPress40.cs":
+            content = content.replace(
+                "await RoutineReminderNotifications.EnsurePermissionAsync()",
+                "await EnsureMoodReminderPermissionAsync()")
+            content = content.replace(
+                "RoutineReminderNotifications.Sync(Android.App.Application.Context, Store.All<RoutineReminder>(\"routinereminder\"));",
+                "SyncMoodReminderNotifications();")
+            content = content.replace(
+                "RoutineReminderNotifications.ScheduleOneTime(Android.App.Application.Context, once);",
+                "bool oneTimeScheduled = ScheduleMoodReminder(once);")
+            content = content.replace(
+                'status.Text = $"Goed. Je krijgt één herinnering om {when:HH:mm}."; ',
+                'status.Text = oneTimeScheduled ? $"Goed. Je krijgt één herinnering om {when:HH:mm}." : "De keuze is bewaard, maar meldingen worden op dit apparaat niet ondersteund."; ')
+            content = content.replace(
+                'status.Text = $"Goed. Je krijgt één herinnering om {when:HH:mm}."; ',
+                'status.Text = oneTimeScheduled ? $"Goed. Je krijgt één herinnering om {when:HH:mm}." : "De keuze is bewaard, maar meldingen worden op dit apparaat niet ondersteund."; ')
+            content = content.replace(
+                'status.Text = $"Je krijgt op de gekozen dagen om {reminder.Time} een herinnering.";',
+                'status.Text = $"Je krijgt op de gekozen dagen om {reminder.Time} een herinnering.";')
+            helper_marker = "\n}\n\ninternal static class MoodReminderIds"
+            helpers = r"""
+    async Task<bool> EnsureMoodReminderPermissionAsync()
+    {
+#if ANDROID
+        return await RoutineReminderNotifications.EnsurePermissionAsync();
+#elif IOS
+        var center = UserNotifications.UNUserNotificationCenter.Current;
+        var settings = await center.GetNotificationSettingsAsync();
+        if (settings.AuthorizationStatus == UserNotifications.UNAuthorizationStatus.NotDetermined)
+            return await center.RequestAuthorizationAsync(UserNotifications.UNAuthorizationOptions.Alert |
+                UserNotifications.UNAuthorizationOptions.Sound | UserNotifications.UNAuthorizationOptions.Badge);
+        return settings.AuthorizationStatus == UserNotifications.UNAuthorizationStatus.Authorized ||
+            settings.AuthorizationStatus == UserNotifications.UNAuthorizationStatus.Provisional;
+#else
+        return false;
+#endif
+    }
+
+    void SyncMoodReminderNotifications()
+    {
+#if ANDROID
+        RoutineReminderNotifications.Sync(Android.App.Application.Context, Store.All<RoutineReminder>("routinereminder"));
+#elif WINDOWS
+        RoutineReminderNotifications.Sync(Store.All<RoutineReminder>("routinereminder"));
+#elif IOS
+        _ = SyncIosMoodRemindersAsync();
+#endif
+    }
+
+    bool ScheduleMoodReminder(RoutineReminder reminder)
+    {
+#if ANDROID
+        RoutineReminderNotifications.ScheduleOneTime(Android.App.Application.Context, reminder);
+        return true;
+#elif IOS
+        Store.Save("routinereminder", reminder.Id, reminder);
+        _ = SyncIosMoodRemindersAsync();
+        return true;
+#else
+        return false;
+#endif
+    }
+
+#if IOS
+    async Task SyncIosMoodRemindersAsync()
+    {
+        var center = UserNotifications.UNUserNotificationCenter.Current;
+        var pending = await center.GetPendingNotificationRequestsAsync();
+        var ownIds = pending.Select(x => x.Identifier)
+            .Where(x => x.StartsWith("moodpress-reminder-", StringComparison.Ordinal)).ToArray();
+        if (ownIds.Length > 0) center.RemovePendingNotificationRequests(ownIds);
+
+        foreach (var item in Store.All<RoutineReminder>("routinereminder"))
+        {
+            if (!item.Enabled) continue;
+            var content = new UserNotifications.UNMutableNotificationContent
+            {
+                Title = item.Title.Length > 0 ? item.Title : "MoodPress",
+                Body = "Je kunt je check-in doen of de herinnering overslaan.",
+                Sound = item.SoundEnabled ? UserNotifications.UNNotificationSound.Default : null
+            };
+            if (item.OneTime && item.OneTimeDate is DateTime oneTime)
+            {
+                var seconds = Math.Max(1, (oneTime - DateTime.Now).TotalSeconds);
+                var trigger = UserNotifications.UNTimeIntervalNotificationTrigger.CreateTrigger(seconds, false);
+                var request = UserNotifications.UNNotificationRequest.FromIdentifier("moodpress-reminder-" + item.Id.ToString("N"), content, trigger);
+                await center.AddNotificationRequestAsync(request);
+                continue;
+            }
+            if (!TimeSpan.TryParse(item.Time, CultureInfo.InvariantCulture, out var localTime)) continue;
+            if (item.RespectQuietHours &&
+                TimeSpan.TryParse(item.QuietStart, CultureInfo.InvariantCulture, out var quietStart) &&
+                TimeSpan.TryParse(item.QuietEnd, CultureInfo.InvariantCulture, out var quietEnd) &&
+                IsWithinQuietHours(localTime, quietStart, quietEnd))
+                localTime = quietEnd;
+
+            foreach (DayOfWeek day in Enum.GetValues(typeof(DayOfWeek)))
+            {
+                if ((item.DaysMask & (1 << (int)day)) == 0) continue;
+                var components = new Foundation.NSDateComponents
+                {
+                    Weekday = day == DayOfWeek.Sunday ? 1 : (int)day + 1,
+                    Hour = (nint)localTime.Hours,
+                    Minute = (nint)localTime.Minutes
+                };
+                var trigger = UserNotifications.UNCalendarNotificationTrigger.CreateTrigger(components, true);
+                var request = UserNotifications.UNNotificationRequest.FromIdentifier(
+                    "moodpress-reminder-" + item.Id.ToString("N") + "-" + day, content, trigger);
+                await center.AddNotificationRequestAsync(request);
+            }
+        }
+    }
+
+    static bool IsWithinQuietHours(TimeSpan time, TimeSpan start, TimeSpan end) =>
+        start < end ? time >= start && time < end : time >= start || time < end;
+#endif
+"""
+            if "EnsureMoodReminderPermissionAsync()" not in content:
+                if content.count(helper_marker) != 1:
+                    raise RuntimeError(f"Could not find MoodReminderIds insertion point in {name}")
+                content = content.replace(helper_marker, "\n" + helpers + helper_marker, 1)
+            if "using UserNotifications;" not in content:
+                content = content.replace("using Plugin.Maui.Audio;", "using Plugin.Maui.Audio;\n#if IOS\nusing UserNotifications;\n#endif", 1)
+        destination = app_dir / name
+        destination.write_text(content, encoding="utf-8")
+
+    secure_transfer = extract_added_patch_file(patch_path, "SecureDeviceTransfer.cs")
+    transfer_file = core_dir / "Data" / "SecureDeviceTransfer.cs"
+    if not transfer_file.exists():
+        transfer_file.write_text(secure_transfer, encoding="utf-8")
+
+    patch_routine_reminder_model(core_dir / "Data" / "Models.cs")
+    patch_support_share_handoff(core_dir / "Data" / "SupportShareService.cs")
+
+    dashboard = app_dir / "DashboardPage.cs"
+    dashboard_text = dashboard.read_text(encoding="utf-8")
+    features = [
+        "CommunicationBoard", "ReadAloud", "RoutineMedia", "MoodReminders",
+        "DifficultMomentPlan", "SecureSync", "SupportPermissions", "SupportHandoff",
+        "BackupHealth", "AccessibilityAudit"
+    ]
+    if any(f"FeatureKind.{kind}" not in dashboard_text for kind in features):
+        enum_match = re.search(r"(public enum FeatureKind\s*\{)(.*?)(\})", dashboard_text, re.S)
+        if not enum_match:
+            raise RuntimeError(f"Could not locate FeatureKind in {dashboard}")
+        body = enum_match.group(2)
+        for kind in features:
+            if f"FeatureKind.{kind}" not in dashboard_text:
+                body = body.rstrip()
+                if body and not body.rstrip().endswith(","):
+                    body += ","
+                body += f"\n    {kind}"
+        dashboard_text = dashboard_text[:enum_match.start(2)] + body + "\n" + dashboard_text[enum_match.end(2):]
+
+    help_entry = '("Hulp", "❓", FeatureKind.Help)'
+    cloud_entry = '("Cloudsync tussen apparaten", "☁️", FeatureKind.CloudSync)'
+    menu_items = [
+        '("Communicatiebord", "💬", FeatureKind.CommunicationBoard)',
+        '("Voorlezen", "🔊", FeatureKind.ReadAloud)',
+        '("Media bij stappenplan", "🎧", FeatureKind.RoutineMedia)',
+        '("Gevoelsherinneringen", "💛", FeatureKind.MoodReminders)',
+        '("Plan voor moeilijke momenten", "🌿", FeatureKind.DifficultMomentPlan)',
+        '("Versleutelde overdracht", "🔐", FeatureKind.SecureSync)',
+        '("Toestemming begeleiders", "👥", FeatureKind.SupportPermissions)',
+        '("Overdracht naar begeleider", "📨", FeatureKind.SupportHandoff)',
+        '("Back-upcontrole", "🛡️", FeatureKind.BackupHealth)',
+        '("Toegankelijkheidscontrole", "♿", FeatureKind.AccessibilityAudit)'
+    ]
+    if "FeatureKind.CommunicationBoard)" not in dashboard_text.split("public DashboardPage", 1)[0]:
+        pass
+    menu_anchor = help_entry + ", " + cloud_entry
+    if all(item not in dashboard_text for item in menu_items):
+        if dashboard_text.count(menu_anchor) != 1:
+            raise RuntimeError(f"Could not locate cloud menu insertion point in {dashboard}")
+        dashboard_text = dashboard_text.replace(menu_anchor, menu_anchor + ", " + ", ".join(menu_items), 1)
+    dashboard.write_text(dashboard_text, encoding="utf-8")
+
+    page = app_dir / "FeaturePage.cs"
+    page_text = page.read_text(encoding="utf-8")
+    route_anchor = "            case FeatureKind.Settings: BuildSettings(); break;"
+    feature_cases = """            case FeatureKind.CommunicationBoard: BuildCommunicationBoard(); break;
+            case FeatureKind.ReadAloud: BuildReadAloud(); break;
+            case FeatureKind.RoutineMedia: BuildRoutineMedia(); break;
+            case FeatureKind.MoodReminders: BuildMoodReminders(); break;
+            case FeatureKind.DifficultMomentPlan: BuildDifficultMomentPlan(); break;
+            case FeatureKind.SecureSync: BuildSecureSync(); break;
+            case FeatureKind.SupportPermissions: BuildSupportPermissions(); break;
+            case FeatureKind.SupportHandoff: BuildSupportHandoff(); break;
+            case FeatureKind.BackupHealth: BuildBackupHealth(); break;
+            case FeatureKind.AccessibilityAudit: BuildAccessibilityAudit(); break;
+"""
+    if "case FeatureKind.CommunicationBoard: BuildCommunicationBoard();" not in page_text:
+        if page_text.count(route_anchor) != 1:
+            raise RuntimeError(f"Could not locate FeaturePage Build switch in {page}")
+        page_text = page_text.replace(route_anchor, feature_cases + route_anchor, 1)
+    title_anchor = 'FeatureKind.Settings => "Instellingen", _ => "Hulp"'
+    title_additions = """FeatureKind.CommunicationBoard => "Mijn communicatiebord",
+        FeatureKind.ReadAloud => "Voorlezen",
+        FeatureKind.RoutineMedia => "Media bij stappenplan",
+        FeatureKind.MoodReminders => "Gevoelsherinneringen",
+        FeatureKind.DifficultMomentPlan => "Mijn plan voor moeilijke momenten",
+        FeatureKind.SecureSync => "Versleutelde overdracht",
+        FeatureKind.SupportPermissions => "Toestemming begeleiders",
+        FeatureKind.SupportHandoff => "Overdracht naar begeleider",
+        FeatureKind.BackupHealth => "Back-upcontrole",
+        FeatureKind.AccessibilityAudit => "Toegankelijkheidscontrole",
+        FeatureKind.Settings => "Instellingen", _ => "Hulp" """
+    if "FeatureKind.CommunicationBoard =>" not in page_text:
+        if page_text.count(title_anchor) != 1:
+            raise RuntimeError(f"Could not locate FeaturePage title switch in {page}")
+        page_text = page_text.replace(title_anchor, title_additions, 1)
+    page.write_text(page_text, encoding="utf-8")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--target", choices=("ios", "windows"), required=True)
@@ -268,6 +614,7 @@ def main() -> int:
     add_vault_validator(core_dir / "Data" / "VaultStore.cs")
     patch_app_session(app_dir)
     patch_dashboard(app_dir)
+    patch_feature_routing(app_dir, namespace, args.repo_root.resolve(), core_dir)
 
     required = [
         app_dir / "CloudSyncClient.cs",
