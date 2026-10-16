@@ -132,6 +132,7 @@ public static class Program
                 await command.ExecuteNonQueryAsync(context.RequestAborted);
             }
             transaction.Commit();
+            transaction.Dispose();
             var profile = new UserProfile(userId, email, request.DisplayName.Trim());
             return Results.Ok(await CreateSessionAsync(connection, profile, context.RequestAborted));
         }
@@ -687,8 +688,10 @@ public static class Program
             await using var owner = connection.CreateCommand();
             owner.CommandText = "SELECT id,owner_user_id FROM workspaces WHERE owner_user_id=$user ORDER BY created_at LIMIT 1;";
             owner.Parameters.AddWithValue("$user", userId);
-            await using var reader = await owner.ExecuteReaderAsync(cancellationToken);
-            if (await reader.ReadAsync(cancellationToken)) { workspaceId = reader.GetString(0); ownerId = reader.GetString(1); }
+            await using (var reader = await owner.ExecuteReaderAsync(cancellationToken))
+            {
+                if (await reader.ReadAsync(cancellationToken)) { workspaceId = reader.GetString(0); ownerId = reader.GetString(1); }
+            }
             if (workspaceId is null)
             {
                 await using var membership = connection.CreateCommand();
