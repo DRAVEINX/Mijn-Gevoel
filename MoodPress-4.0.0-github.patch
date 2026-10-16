@@ -2321,7 +2321,62 @@ diff -ruN moodpress_base_flat/MijnGevoel.Core/Data/SupportShareService.cs moodpr
 diff -ruN moodpress_base_flat/MijnGevoel.Core/Data/VaultStore.cs moodpress4_build/MijnGevoel.Core/Data/VaultStore.cs
 --- moodpress_base_flat/MijnGevoel.Core/Data/VaultStore.cs	2026-10-15 06:30:40.000000000 +0000
 +++ moodpress4_build/MijnGevoel.Core/Data/VaultStore.cs	2026-10-16 11:04:31.000000000 +0000
-@@ -72,6 +72,31 @@
+@@ -29,3 +29,57 @@
++    const int CloudSnapshotHeaderLength = 36;
++    const int MaxCloudSnapshotBytes = 100 * 1024 * 1024;
++    static readonly byte[] CloudSnapshotMagic = "MPCLOUD1"u8.ToArray();
++    static readonly byte[] CloudSnapshotAad = "MoodPress cloud snapshot v1"u8.ToArray();
++
++    /// <summary>Encrypts an entire backup envelope with the active vault key before sending it to cloud storage.</summary>
++    public byte[] EncryptCloudSnapshot(byte[] plaintext)
++    {
++        ArgumentNullException.ThrowIfNull(plaintext);
++        if (plaintext.Length == 0 || plaintext.LongLength > MaxCloudSnapshotBytes - CloudSnapshotHeaderLength)
++            throw new ArgumentException("De cloudback-up is leeg of te groot.", nameof(plaintext));
++
++        var output = new byte[CloudSnapshotHeaderLength + plaintext.Length];
++        var nonce = RandomNumberGenerator.GetBytes(12);
++        try
++        {
++            CloudSnapshotMagic.CopyTo(output, 0);
++            nonce.CopyTo(output, 8);
++            using var aes = new AesGcm(_key, 16);
++            aes.Encrypt(nonce, plaintext, output.AsSpan(CloudSnapshotHeaderLength),
++                output.AsSpan(20, 16), CloudSnapshotAad);
++            return output;
++        }
++        catch
++        {
++            CryptographicOperations.ZeroMemory(output);
++            throw;
++        }
++        finally { CryptographicOperations.ZeroMemory(nonce); }
++    }
++
++    /// <summary>Decrypts only a snapshot authenticated with the active MoodPress vault key.</summary>
++    public byte[] DecryptCloudSnapshot(byte[] envelope)
++    {
++        ArgumentNullException.ThrowIfNull(envelope);
++        if (envelope.Length <= CloudSnapshotHeaderLength || envelope.Length > MaxCloudSnapshotBytes ||
++            !envelope.AsSpan(0, 8).SequenceEqual(CloudSnapshotMagic))
++            throw new InvalidDataException("De versleutelde cloudback-up is ongeldig of te groot.");
++
++        var plaintext = new byte[envelope.Length - CloudSnapshotHeaderLength];
++        try
++        {
++            using var aes = new AesGcm(_key, 16);
++            aes.Decrypt(envelope.AsSpan(8, 12), envelope.AsSpan(CloudSnapshotHeaderLength),
++                envelope.AsSpan(20, 16), plaintext, CloudSnapshotAad);
++            return plaintext;
++        }
++        catch
++        {
++            CryptographicOperations.ZeroMemory(plaintext);
++            throw;
++        }
++    }
++
+@@ -72,6 + 126,31 @@
          }
      }
  
@@ -3040,8 +3095,8 @@ diff -ruN moodpress_base_flat/scripts/check-moodpress-4.sh moodpress4_build/scri
 
 diff -ruN moodpress_base_flat/MijnGevoel.Android/CloudSyncClient.cs moodpress4_build/MijnGevoel.Android/CloudSyncClient.cs
 --- moodpress_base_flat/MijnGevoel.Android/CloudSyncClient.cs	1970-01-01 00:00:00.000000000 +0000
-+++ moodpress4_build/MijnGevoel.Android/CloudSyncClient.cs	2026-10-16 14:00:00.000000000 +0000
-@@ -0,0 +1,379 @@
++++ moodpress4_build/MijnGevoel.Android/CloudSyncClient.cs	2026-10-16 14:30:00.000000000 +0000
+@@ -0,0 +1,399 @@
 +using System.Net;
 +using System.Net.Http.Headers;
 +using System.Net.Http.Json;
@@ -3166,15 +3221,21 @@ diff -ruN moodpress_base_flat/MijnGevoel.Android/CloudSyncClient.cs moodpress4_b
 +            var remote = await TryGetSnapshotAsync(endpoint, token, workspace, cancellationToken);
 +            if (remote is null)
 +            {
-+                var bytes = await File.ReadAllBytesAsync(localZip, cancellationToken);
++                var plainBytes = await File.ReadAllBytesAsync(localZip, cancellationToken);
++                byte[]? encryptedBytes = null;
 +                try
 +                {
-+                    var digest = Convert.ToHexString(SHA256.HashData(bytes));
-+                    var saved = await PutSnapshotAsync(endpoint, token, workspace, 0, vaultId, digest, bytes, cancellationToken);
++                    encryptedBytes = AppSession.Store.EncryptCloudSnapshot(plainBytes);
++                    var digest = Convert.ToHexString(SHA256.HashData(encryptedBytes));
++                    var saved = await PutSnapshotAsync(endpoint, token, workspace, 0, vaultId, digest, encryptedBytes, cancellationToken);
 +                    await SaveBaselineAsync(vaultId, localZip, cancellationToken);
 +                    return new CloudSyncResult(true, "Eerste cloudsnapshot opgeslagen.", saved.Version, 0, true);
 +                }
-+                finally { CryptographicOperations.ZeroMemory(bytes); }
++                finally
++                {
++                    CryptographicOperations.ZeroMemory(plainBytes);
++                    if (encryptedBytes is not null) CryptographicOperations.ZeroMemory(encryptedBytes);
++                }
 +            }
 +
 +            if (!string.Equals(remote.VaultId, vaultId, StringComparison.OrdinalIgnoreCase))
@@ -3185,11 +3246,19 @@ diff -ruN moodpress_base_flat/MijnGevoel.Android/CloudSyncClient.cs moodpress4_b
 +            catch (FormatException) { throw new InvalidDataException("De cloudback-up heeft een ongeldig bestandsformaat."); }
 +            try
 +            {
-+                if (remoteBytes.LongLength > MaxArchiveBytes) throw new InvalidDataException("De cloudback-up is groter dan 100 MB.");
++                if (remoteBytes.LongLength > MaxArchiveBytes) throw new InvalidDataException("De versleutelde cloudback-up is groter dan 100 MB.");
 +                var remoteSha = Convert.ToHexString(SHA256.HashData(remoteBytes));
 +                if (!string.Equals(remoteSha, remote.Sha256, StringComparison.OrdinalIgnoreCase))
 +                    throw new CryptographicException("De cloudback-up faalt de SHA-256-controle. Er is niets aangepast.");
-+                await File.WriteAllBytesAsync(remoteZip, remoteBytes, cancellationToken);
++                byte[]? decryptedBytes = null;
++                try
++                {
++                    decryptedBytes = AppSession.Store.DecryptCloudSnapshot(remoteBytes);
++                    if (decryptedBytes.LongLength > MaxArchiveBytes)
++                        throw new InvalidDataException("De ontsleutelde cloudback-up is groter dan 100 MB.");
++                    await File.WriteAllBytesAsync(remoteZip, decryptedBytes, cancellationToken);
++                }
++                finally { if (decryptedBytes is not null) CryptographicOperations.ZeroMemory(decryptedBytes); }
 +            }
 +            finally { CryptographicOperations.ZeroMemory(remoteBytes); }
 +
@@ -3204,16 +3273,22 @@ diff -ruN moodpress_base_flat/MijnGevoel.Android/CloudSyncClient.cs moodpress4_b
 +            var uploadVersion = remote.Version;
 +            EnsureArchiveSize(mergedZip);
 +            var mergedBytes = await File.ReadAllBytesAsync(mergedZip, cancellationToken);
++            byte[]? encryptedMergedBytes = null;
 +            try
 +            {
 +                if (!string.Equals(merge.ContentFingerprint, remoteFingerprint, StringComparison.Ordinal))
 +                {
-+                    var digest = Convert.ToHexString(SHA256.HashData(mergedBytes));
-+                    var saved = await PutSnapshotAsync(endpoint, token, workspace, remote.Version, vaultId, digest, mergedBytes, cancellationToken);
++                    encryptedMergedBytes = AppSession.Store.EncryptCloudSnapshot(mergedBytes);
++                    var digest = Convert.ToHexString(SHA256.HashData(encryptedMergedBytes));
++                    var saved = await PutSnapshotAsync(endpoint, token, workspace, remote.Version, vaultId, digest, encryptedMergedBytes, cancellationToken);
 +                    uploadVersion = saved.Version;
 +                }
 +            }
-+            finally { CryptographicOperations.ZeroMemory(mergedBytes); }
++            finally
++            {
++                CryptographicOperations.ZeroMemory(mergedBytes);
++                if (encryptedMergedBytes is not null) CryptographicOperations.ZeroMemory(encryptedMergedBytes);
++            }
 +
 +            var applied = await Task.Run(() => CloudArchiveMerger.ApplyMergedArchive(mergedZip, AppSession.Store, AppSession.Accounts, AppSession.Username), cancellationToken);
 +            await SaveBaselineAsync(vaultId, mergedZip, cancellationToken);
