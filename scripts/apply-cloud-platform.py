@@ -614,8 +614,23 @@ def sync_portable_feature_methods(android_source_root: Path, app_dir: Path) -> N
     source = (android_app / "FeaturePage.cs").read_text(encoding="utf-8")
     target_path = app_dir / "FeaturePage.cs"
     target = target_path.read_text(encoding="utf-8")
-    for method_name in ("BuildAgenda", "BuildDay", "BuildRoutines", "BuildAdultPlanning"):
+    for method_name in ("BuildAgenda", "BuildDay", "BuildRoutines", "BuildRoutineReminders", "BuildAdultPlanning"):
         _, _, modern_method = extract_csharp_method(source, method_name)
+        if method_name == "BuildRoutineReminders":
+            modern_method = modern_method.replace(
+                "await RoutineReminderNotifications.EnsurePermissionAsync()",
+                "await EnsureMoodReminderPermissionAsync()")
+            modern_method = modern_method.replace(
+                'RoutineReminderNotifications.Sync(Android.App.Application.Context, Store.All<RoutineReminder>("routinereminder"));',
+                "SyncMoodReminderNotifications();")
+            modern_method = modern_method.replace(
+                "Routine opgeslagen. Je telefoon kan je op de gekozen dagen herinneren ✔",
+                "Routine opgeslagen. Je apparaat kan je op de gekozen dagen herinneren ✔")
+            modern_method = modern_method.replace(
+                "Routine opgeslagen, maar meldingen zijn niet toegestaan. Zet meldingen aan in de Android-instellingen van MoodPress.",
+                "Routine opgeslagen. Op dit apparaat kunnen meldingen beperkt zijn; controleer de beschikbare meldingsinstellingen.")
+            if "Android.App.Application.Context" in modern_method:
+                raise RuntimeError("The platform-neutral reminder screen still contains Android-only code.")
         start, end, _ = extract_csharp_method(target, method_name)
         target = target[:start] + modern_method + target[end:]
         print(f"Ported {method_name} from Android 2.5.2 into {app_dir.name}")
