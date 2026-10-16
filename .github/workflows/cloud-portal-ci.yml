@@ -1,0 +1,56 @@
+name: MoodPress Cloud Portal CI
+
+on:
+  push:
+    branches:
+      - moodpress-cloud-portal-crossplatform
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: moodpress-cloud-portal-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-and-smoke-test:
+    name: Build and test cloud API / support portal
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install .NET 10
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore and compile with warnings as errors
+        run: |
+          dotnet restore cloud/MoodPress.CloudPortal.csproj
+          dotnet build cloud/MoodPress.CloudPortal.csproj --configuration Release --no-restore --warnaserror
+
+      - name: Start test server and run API smoke tests
+        shell: bash
+        env:
+          MOODPRESS_DATABASE_PATH: ${{ runner.temp }}/moodpress-cloud-test.db
+          ASPNETCORE_ENVIRONMENT: Development
+          ASPNETCORE_URLS: http://127.0.0.1:5080
+          MOODPRESS_TEST_URL: http://127.0.0.1:5080
+        run: |
+          set -euo pipefail
+          rm -f "$MOODPRESS_DATABASE_PATH" "$MOODPRESS_DATABASE_PATH-wal" "$MOODPRESS_DATABASE_PATH-shm"
+          (
+            cd cloud
+            dotnet bin/Release/net10.0/MoodPress.CloudPortal.dll
+          ) > "$RUNNER_TEMP/moodpress-cloud-server.log" 2>&1 &
+          server_pid=$!
+          cleanup() {
+            kill "$server_pid" 2>/dev/null || true
+            wait "$server_pid" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+          python3 scripts/cloud-portal-smoke.py
+          echo "Portal assets and API endpoints are reachable."
+          cat "$RUNNER_TEMP/moodpress-cloud-server.log"
