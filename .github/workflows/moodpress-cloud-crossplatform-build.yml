@@ -34,9 +34,12 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           $root = Join-Path $env:RUNNER_TEMP "moodpress-windows-source"
+          $androidRoot = Join-Path $env:RUNNER_TEMP "moodpress-android-current"
           New-Item -ItemType Directory -Force -Path $root | Out-Null
+          New-Item -ItemType Directory -Force -Path $androidRoot | Out-Null
           Expand-Archive -LiteralPath (Join-Path $env:GITHUB_WORKSPACE "MoodPress-Windows-source-2.3.0.zip") -DestinationPath $root -Force
-          python scripts/apply-cloud-platform.py --target windows --source-root $root --repo-root $env:GITHUB_WORKSPACE
+          Expand-Archive -LiteralPath (Join-Path $env:GITHUB_WORKSPACE "MoodPress-Android-compleet-2.5.2.zip") -DestinationPath $androidRoot -Force
+          python scripts/apply-cloud-platform.py --target windows --source-root $root --android-source-root $androidRoot --repo-root $env:GITHUB_WORKSPACE
           $projectRoot = Join-Path $root "MoodPress-Windows-source-2.3.0"
           if (!(Test-Path $projectRoot)) { throw "Windows source project root is missing: $projectRoot" }
           "MOODPRESS_WINDOWS_ROOT=$projectRoot" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
@@ -115,10 +118,13 @@ jobs:
         run: |
           set -euo pipefail
           root="$RUNNER_TEMP/moodpress-ios-source"
-          mkdir -p "$root"
+          android_root="$RUNNER_TEMP/moodpress-android-current"
+          mkdir -p "$root" "$android_root"
           unzip -t MoodPress-iOS-compleet-2.3.2.zip
           unzip -q MoodPress-iOS-compleet-2.3.2.zip -d "$root"
-          python3 scripts/apply-cloud-platform.py --target ios --source-root "$root" --repo-root "$GITHUB_WORKSPACE"
+          unzip -t MoodPress-Android-compleet-2.5.2.zip
+          unzip -q MoodPress-Android-compleet-2.5.2.zip -d "$android_root"
+          python3 scripts/apply-cloud-platform.py --target ios --source-root "$root" --android-source-root "$android_root" --repo-root "$GITHUB_WORKSPACE"
           project="$root/MijnGevoel-Android/MijnGevoel.Android/MoodPress.iOS.csproj"
           test -f "$project"
           echo "MOODPRESS_IOS_ROOT=$root/MijnGevoel-Android" >> "$GITHUB_ENV"
