@@ -166,14 +166,17 @@ diff -ruN moodpress_base_flat/MijnGevoel.Android/DashboardPage.cs moodpress4_bui
          if (columns == _shortcutColumns || AppSession.Store is null) return;
          _shortcutColumns = columns;
          Build();
-@@ -520,6 +522,7 @@
-     protected override async void OnAppearing()
+
+diff -ruN moodpress_base_flat/MijnGevoel.Android/AppSession.cs moodpress4_build/MijnGevoel.Android/AppSession.cs
+--- moodpress_base_flat/MijnGevoel.Android/AppSession.cs	2026-10-15 06:30:40.000000000 +0000
++++ moodpress4_build/MijnGevoel.Android/AppSession.cs	2026-10-16 14:15:00.000000000 +0000
+@@ -164,4 +164,5 @@
+     public static void Touch()
      {
-         base.OnAppearing();
-         if (AppSession.Store is not null) Build();
-         AppSession.Touch();
-+        if (AppSession.Store is not null) _ = CloudSyncClient.TryAutoSyncAsync();
-         if (AppSession.Settings.Animations) { Opacity = 0; _ = this.FadeToAsync(1, 180, Easing.CubicOut); }
+         LastActivityUtc = DateTime.UtcNow;
++        if (Store is not null) _ = CloudSyncClient.TryAutoSyncAsync();
+         if (KeepSignedIn) _ = PersistRememberedActivityAsync();
+     }
 
 diff -ruN moodpress_base_flat/MijnGevoel.Android/FeatureCatalog.cs moodpress4_build/MijnGevoel.Android/FeatureCatalog.cs
 --- moodpress_base_flat/MijnGevoel.Android/FeatureCatalog.cs	2026-10-15 06:30:40.000000000 +0000
@@ -3030,7 +3033,7 @@ diff -ruN moodpress_base_flat/scripts/check-moodpress-4.sh moodpress4_build/scri
 +test -f 'MijnGevoel.Android/CloudArchiveMerger.cs'
 +test -f 'MijnGevoel.Android/FeaturePage.CloudSync.cs'
 +grep -q 'BuildCloudSyncPanel' "$extra"
-+grep -q 'TryAutoSyncAsync' 'MijnGevoel.Android/DashboardPage.cs'
++grep -q 'TryAutoSyncAsync' 'MijnGevoel.Android/AppSession.cs'
 +grep -q 'CloudArchiveMerger.CreateMergedArchive' 'MijnGevoel.Android/CloudSyncClient.cs'
 +grep -q 'IsEncryptedRecordForCurrentKey' 'MijnGevoel.Android/CloudArchiveMerger.cs'
 +echo "MoodPress cloud-sync integration checks passed."
