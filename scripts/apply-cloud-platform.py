@@ -598,6 +598,13 @@ def patch_timer_and_routine_progress(app_dir: Path) -> None:
             raise RuntimeError(f"Could not find exactly one Timer route in {page}")
         source = source.replace(timer_old, timer_new, 1)
 
+    appearing_old = "        AppSession.Touch();\n        if (AppSession.Settings.Animations)"
+    appearing_new = "        AppSession.Touch();\n        if (_kind == FeatureKind.Timer) Build();\n        if (AppSession.Settings.Animations)"
+    if "_kind == FeatureKind.Timer) Build();" not in source:
+        if source.count(appearing_old) != 1:
+            raise RuntimeError(f"Could not find exactly one OnAppearing timer refresh point in {page}")
+        source = source.replace(appearing_old, appearing_new, 1)
+
     start_old = "() => { _runningRoutine = routine; _routineStep = 0; ShowRoutineRun(); }"
     start_new = "() => { _runningRoutine = routine; _routineStep = RoutineRunProgressService.ResumeStep(Store.Load<RoutineRunProgress>(\"routinerunprogress\", routine.Id), routine.Steps.Length); ShowRoutineRun(); }"
     if "RoutineRunProgressService.ResumeStep(Store.Load<RoutineRunProgress>" not in source:
