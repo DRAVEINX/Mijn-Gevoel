@@ -6,8 +6,11 @@ on:
     paths:
       - "MoodPress-Windows-source-2.3.0.zip"
       - "MoodPress-Windows-source-2.3.0-fixed.zip"
+      - "MoodPress-Android-compleet-2.5.2.zip"
       - ".github/workflows/moodpress-windows-msi-2.3.0.yml"
       - "scripts/apply-cloud-platform.py"
+      - "scripts/patch_journal_accessibility.py"
+      - "platform-port/shared/**"
       - "MoodPress-4.0.0-github.patch"
 
 permissions:
