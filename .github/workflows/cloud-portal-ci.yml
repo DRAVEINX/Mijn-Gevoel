@@ -85,6 +85,17 @@ jobs:
           find platform-source/ios -name '*.csproj' -print | sort
           find platform-source/windows -name 'FeaturePage.cs' -o -name 'DashboardPage.cs' -o -name 'AppSession.cs' -o -name 'BackupService.cs' | sort
           find platform-source/ios -name 'FeaturePage.cs' -o -name 'DashboardPage.cs' -o -name 'AppSession.cs' -o -name 'BackupService.cs' | sort
+          echo '--- WINDOWS APP PROJECT ---'
+          sed -n '1,180p' platform-source/windows/MoodPress-Windows-source-2.3.0/MoodPress.WindowsApp/MoodPress.WindowsApp.csproj
+          echo '--- WINDOWS SESSION / DASHBOARD HEAD ---'
+          sed -n '1,130p' platform-source/windows/MoodPress-Windows-source-2.3.0/MoodPress.WindowsApp/AppSession.cs
+          sed -n '1,100p' platform-source/windows/MoodPress-Windows-source-2.3.0/MoodPress.WindowsApp/DashboardPage.cs
+          echo '--- WINDOWS FEATURE PAGE HEAD ---'
+          sed -n '1,140p' platform-source/windows/MoodPress-Windows-source-2.3.0/MoodPress.WindowsApp/FeaturePage.cs
+          echo '--- IOS PROJECT ---'
+          sed -n '1,180p' platform-source/ios/MijnGevoel-Android/MijnGevoel.Android/MoodPress.iOS.csproj
+          echo '--- IOS MAIN PROJECT TARGET ---'
+          sed -n '1,100p' platform-source/ios/MijnGevoel-Android/MijnGevoel.Android/MijnGevoel.Android.csproj
 
   build-and-smoke-test:
     name: Build and test cloud API / support portal
