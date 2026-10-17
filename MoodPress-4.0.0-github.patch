@@ -4069,9 +4069,7 @@ diff -ruN moodpress_base_flat/MijnGevoel.Core/MijnGevoel.Core.csproj moodpress4_
              }));
 --- a/scripts/check-moodpress-4.sh
 +++ b/scripts/check-moodpress-4.sh
-@@ -70,4 +70,10 @@
- grep -q 'bool _openingFeature;' "$more"
- grep -q 'Interlocked.Exchange(ref _bottomTabNavigationInProgress, 1)' "$tabs"
+@@ -70,2 +70,8 @@
  grep -q 'Interlocked.Exchange(ref _bottomTabNavigationInProgress, 0)' "$tabs"
 +dashboard="MijnGevoel.Android/DashboardPage.cs"
 +grep -q '_search.Completed' "$more"
