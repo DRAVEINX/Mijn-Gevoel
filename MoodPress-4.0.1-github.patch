@@ -1223,7 +1223,8 @@ diff -ruN moodpress_base_flat/MijnGevoel.Android/FeaturePage.cs moodpress4_build
          if (_kind == FeatureKind.Timer)
          {
              RefreshTimerState(announceCompletion: true);
-@@ -139,7 +154,8 @@
+@@ -138,8 +153,9 @@
+     async Task FocusVoiceCaptureAsync()
      {
          _focusVoiceCapture = false;
          try
