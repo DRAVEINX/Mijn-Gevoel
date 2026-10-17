@@ -38,6 +38,7 @@ jobs:
           unzip -q "$base_zip" -d source
           test -d source/MijnGevoel-Android || { echo "Verwachte broncodemap ontbreekt." >&2; exit 1; }
           patch --batch --forward -p1 -d source/MijnGevoel-Android < MoodPress-4.0.0-github.patch
+          python3 scripts/fix-moodpress-feature-directory.py source/MijnGevoel-Android
           cd source/MijnGevoel-Android
           bash scripts/check-moodpress-4.sh
           grep -q '<ApplicationDisplayVersion>4.0.0</ApplicationDisplayVersion>' MijnGevoel.Android/MijnGevoel.Android.csproj
