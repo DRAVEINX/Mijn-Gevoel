@@ -39,6 +39,7 @@ search_helper = r'''
     static bool IsVoiceSearch(string query)
     {
         var term = (query ?? string.Empty).Trim();
+        if (term.Length < 3) return false;
         return new[] { "inspreken", "spraak", "spraakbericht", "opname", "opnemen", "microfoon", "audio", "geluid" }
             .Any(alias => alias.Contains(term, StringComparison.CurrentCultureIgnoreCase)
                 || term.Contains(alias, StringComparison.CurrentCultureIgnoreCase));
