@@ -45,6 +45,20 @@ jobs:
           grep -q '<ApplicationVersion>35</ApplicationVersion>' MijnGevoel.Android/MijnGevoel.Android.csproj
           echo "MoodPress 4.0 source patch applied and static checks passed."
 
+      - name: Bewaar Android-schermen voor diagnose van ontbrekende functies
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: MoodPress-Android-navigation-diagnostics
+          path: |
+            source/MijnGevoel-Android/MijnGevoel.Android/MorePage.cs
+            source/MijnGevoel-Android/MijnGevoel.Android/FeatureCatalog.cs
+            source/MijnGevoel-Android/MijnGevoel.Android/DashboardPage.cs
+            source/MijnGevoel-Android/MijnGevoel.Android/AppUi.cs
+            source/MijnGevoel-Android/MijnGevoel.Android/FeaturePage.cs
+          if-no-files-found: warn
+          retention-days: 7
+
       - name: Controleer cloudsync en ouder-/begeleidersportaal in Android-broncode
         shell: bash
         run: |
