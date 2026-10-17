@@ -32,17 +32,17 @@ jobs:
           set -euo pipefail
           base_zip="MoodPress-Android-compleet-2.5.2.zip"
           test -f "$base_zip" || { echo "Broncodebestand ontbreekt: $base_zip" >&2; exit 1; }
-          test -f MoodPress-4.0.0-github.patch || { echo "De 4.0-patch ontbreekt." >&2; exit 1; }
+          test -f MoodPress-4.0.1-github.patch || { echo "De 4.0-patch ontbreekt." >&2; exit 1; }
           unzip -t "$base_zip"
           mkdir -p source
           unzip -q "$base_zip" -d source
           test -d source/MijnGevoel-Android || { echo "Verwachte broncodemap ontbreekt." >&2; exit 1; }
-          patch --batch --forward -p1 -d source/MijnGevoel-Android < MoodPress-4.0.0-github.patch
+          patch --batch --forward -p1 -d source/MijnGevoel-Android < MoodPress-4.0.1-github.patch
           python3 scripts/fix-moodpress-feature-directory.py source/MijnGevoel-Android
           cd source/MijnGevoel-Android
           bash scripts/check-moodpress-4.sh
-          grep -q '<ApplicationDisplayVersion>4.0.0</ApplicationDisplayVersion>' MijnGevoel.Android/MijnGevoel.Android.csproj
-          grep -q '<ApplicationVersion>35</ApplicationVersion>' MijnGevoel.Android/MijnGevoel.Android.csproj
+          grep -q '<ApplicationDisplayVersion>4.0.1</ApplicationDisplayVersion>' MijnGevoel.Android/MijnGevoel.Android.csproj
+          grep -q '<ApplicationVersion>36</ApplicationVersion>' MijnGevoel.Android/MijnGevoel.Android.csproj
           echo "MoodPress 4.0 source patch applied and static checks passed."
 
       - name: Bewaar Android-schermen voor diagnose van ontbrekende functies
@@ -209,11 +209,11 @@ jobs:
                   exit 1
                 fi
               fi
-              cp "$artifact" "$GITHUB_WORKSPACE/artifacts/MoodPress-4.0.0-${target}.${format}"
+              cp "$artifact" "$GITHUB_WORKSPACE/artifacts/MoodPress-4.0.1-${target}.${format}"
             done
           done
           cd "$GITHUB_WORKSPACE/artifacts"
-          sha256sum MoodPress-4.0.0-Phone.apk MoodPress-4.0.0-Phone.aab MoodPress-4.0.0-Tablet.apk MoodPress-4.0.0-Tablet.aab | tee SHA256SUMS.txt
+          sha256sum MoodPress-4.0.1-Phone.apk MoodPress-4.0.1-Phone.aab MoodPress-4.0.1-Tablet.apk MoodPress-4.0.1-Tablet.aab | tee SHA256SUMS.txt
           ls -lh
       - name: Bouw een debug-APK voor telefoon en tablet als release-sleutels ontbreken
         if: steps.signing.outputs.ready != 'true'
@@ -239,10 +239,10 @@ jobs:
               --output "$out"
             apk="$(find "$out" -type f -iname '*.apk' -print -quit)"
             test -n "$apk" && test -f "$apk"
-            cp "$apk" "$GITHUB_WORKSPACE/artifacts/MoodPress-4.0.0-${target}-DEBUG.apk"
+            cp "$apk" "$GITHUB_WORKSPACE/artifacts/MoodPress-4.0.1-${target}-DEBUG.apk"
           done
           cd "$GITHUB_WORKSPACE/artifacts"
-          sha256sum MoodPress-4.0.0-Phone-DEBUG.apk MoodPress-4.0.0-Tablet-DEBUG.apk | tee SHA256SUMS.txt
+          sha256sum MoodPress-4.0.1-Phone-DEBUG.apk MoodPress-4.0.1-Tablet-DEBUG.apk | tee SHA256SUMS.txt
           printf '%s\n' 'Alleen debug-APK-bestanden zijn gemaakt; voor ondertekende APK/AAB-releases moeten de vier ANDROID_* GitHub Secrets zijn ingesteld.' > BUILD-STATUS.txt
           ls -lh
 
@@ -250,7 +250,7 @@ jobs:
         if: steps.signing.outputs.ready == 'true'
         uses: actions/upload-artifact@v7
         with:
-          name: MoodPress-4.0.0-Android-Phone-Tablet-Release
+          name: MoodPress-4.0.1-Android-Phone-Tablet-Release
           path: artifacts/*
           if-no-files-found: error
           retention-days: 30
@@ -259,7 +259,7 @@ jobs:
         if: steps.signing.outputs.ready != 'true'
         uses: actions/upload-artifact@v7
         with:
-          name: MoodPress-4.0.0-Android-Phone-Tablet-Debug
+          name: MoodPress-4.0.1-Android-Phone-Tablet-Debug
           path: artifacts/*
           if-no-files-found: error
           retention-days: 14

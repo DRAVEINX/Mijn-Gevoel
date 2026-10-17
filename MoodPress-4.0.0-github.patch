@@ -38,11 +38,11 @@ diff -ruN moodpress_base_flat/.github/workflows/moodpress-4-android.yml moodpres
 +        run: |
 +          set -euo pipefail
 +          project="MijnGevoel.Android/MijnGevoel.Android.csproj"
-+          grep -q '<ApplicationDisplayVersion>4.0.0</ApplicationDisplayVersion>' "$project"
-+          grep -q '<ApplicationVersion>35</ApplicationVersion>' "$project"
++          grep -q '<ApplicationDisplayVersion>4.0.1</ApplicationDisplayVersion>' "$project"
++          grep -q '<ApplicationVersion>36</ApplicationVersion>' "$project"
 +          grep -q 'MoodPressTarget' "$project"
 +          grep -q 'nl.mijngevoel.app.tablet' "$project"
-+          grep -q 'Plugin.Maui.Audio" Version="4.0.0"' "$project"
++          grep -q 'Plugin.Maui.Audio" Version="4.0.1"' "$project"
 +          grep -q 'CommunityToolkit.Maui" Version="15.0.1"' "$project"
 +
 +      - name: Statische controles voor MoodPress 4.0
@@ -104,18 +104,18 @@ diff -ruN moodpress_base_flat/.github/workflows/moodpress-4-android.yml moodpres
 +                find "$out" -maxdepth 5 -type f -print || true
 +                exit 1
 +              fi
-+              cp "$artifact" "artifacts/MoodPress-4.0.0-${target}.${ext}"
++              cp "$artifact" "artifacts/MoodPress-4.0.1-${target}.${ext}"
 +            done
 +          done
 +
 +          cd artifacts
-+          sha256sum MoodPress-4.0.0-Phone.apk MoodPress-4.0.0-Phone.aab MoodPress-4.0.0-Tablet.apk MoodPress-4.0.0-Tablet.aab | tee SHA256SUMS.txt
++          sha256sum MoodPress-4.0.1-Phone.apk MoodPress-4.0.1-Phone.aab MoodPress-4.0.1-Tablet.apk MoodPress-4.0.1-Tablet.aab | tee SHA256SUMS.txt
 +          ls -lh
 +
 +      - name: Upload de vier Android-releases
 +        uses: actions/upload-artifact@v7
 +        with:
-+          name: MoodPress-4.0.0-Android-telefoon-tablet
++          name: MoodPress-4.0.1-Android-telefoon-tablet
 +          path: artifacts/*
 +          if-no-files-found: error
 +          retention-days: 30
@@ -127,17 +127,17 @@ diff -ruN moodpress_base_flat/MOODPRESS-4.0-START-HIER.md moodpress4_build/MOODP
 --- moodpress_base_flat/MOODPRESS-4.0-START-HIER.md	1970-01-01 00:00:00.000000000 +0000
 +++ moodpress4_build/MOODPRESS-4.0-START-HIER.md	2026-10-16 11:38:43.665725636 +0000
 @@ -0,0 +1,16 @@
-+# MoodPress 4.0.0 — start hier
++# MoodPress 4.0.1 — start hier
 +
 +1. Upload de inhoud van deze broncode naar de repository `DRAVEINX/Mijn-Gevoel`, met behoud van de mapstructuur.
 +2. Controleer in GitHub onder **Settings → Secrets and variables → Actions** of deze bestaande signing secrets aanwezig zijn: `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_PASSWORD`, `ANDROID_KEY_ALIAS`. Deel deze waarden niet in chat of code.
 +3. Open **Actions → MoodPress 4.0 Android — telefoon en tablet** en kies **Run workflow**.
 +4. Wacht tot tests én alle vier publicatiestappen groen zijn.
-+5. Download het artifact `MoodPress-4.0.0-Android-telefoon-tablet`. Het bevat:
-+   - `MoodPress-4.0.0-Phone.apk`
-+   - `MoodPress-4.0.0-Phone.aab`
-+   - `MoodPress-4.0.0-Tablet.apk`
-+   - `MoodPress-4.0.0-Tablet.aab`
++5. Download het artifact `MoodPress-4.0.1-Android-telefoon-tablet`. Het bevat:
++   - `MoodPress-4.0.1-Phone.apk`
++   - `MoodPress-4.0.1-Phone.aab`
++   - `MoodPress-4.0.1-Tablet.apk`
++   - `MoodPress-4.0.1-Tablet.aab`
 +   - `SHA256SUMS.txt`
 +
 +De APK's zijn bedoeld om op apparaten te installeren; AAB-bestanden zijn bedoeld voor distributie via Google Play. De tablet-app krijgt een aparte package ID. Omdat dit de eerste aparte package ID voor de tabletvariant in dit bronpakket is, wordt die door Android als een aparte app behandeld in plaats van als een update van een bestaande installatie met een andere package ID.
@@ -1795,8 +1795,8 @@ diff -ruN moodpress_base_flat/MijnGevoel.Android/MijnGevoel.Android.csproj moodp
      <ApplicationId>nl.mijngevoel.app</ApplicationId>
 -    <ApplicationDisplayVersion>2.5.2</ApplicationDisplayVersion>
 -    <ApplicationVersion>34</ApplicationVersion>
-+    <ApplicationDisplayVersion>4.0.0</ApplicationDisplayVersion>
-+    <ApplicationVersion>35</ApplicationVersion>
++    <ApplicationDisplayVersion>4.0.1</ApplicationDisplayVersion>
++    <ApplicationVersion>36</ApplicationVersion>
 +    <ApplicationTitle Condition="'$(MoodPressTarget)' == 'Tablet'">MoodPress Tablet</ApplicationTitle>
 +    <ApplicationId Condition="'$(MoodPressTarget)' == 'Tablet'">nl.mijngevoel.app.tablet</ApplicationId>
      <SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">23.0</SupportedOSPlatformVersion>
@@ -1808,7 +1808,7 @@ diff -ruN moodpress_base_flat/MijnGevoel.Android/MijnGevoel.Android.csproj moodp
      <PackageReference Include="Microsoft.Maui.Controls" Version="10.0.110" />
 +    <PackageReference Include="CommunityToolkit.Maui" Version="15.0.1" />
      <PackageReference Include="Xamarin.AndroidX.Biometric" Version="1.1.0.33" />
-     <PackageReference Include="Plugin.Maui.Audio" Version="4.0.0" />
+     <PackageReference Include="Plugin.Maui.Audio" Version="4.0.1" />
      <!-- Keep AndroidX KTX packages aligned with the MAUI 10 transitive package versions to avoid NU1608 mismatches. -->
 diff -ruN moodpress_base_flat/MijnGevoel.Android/Platforms/Android/MoodPressWidgetProvider.cs moodpress4_build/MijnGevoel.Android/Platforms/Android/MoodPressWidgetProvider.cs
 --- moodpress_base_flat/MijnGevoel.Android/Platforms/Android/MoodPressWidgetProvider.cs	1970-01-01 00:00:00.000000000 +0000
@@ -2545,9 +2545,9 @@ diff -ruN moodpress_base_flat/README-ANDROID.md moodpress4_build/README-ANDROID.
 +++ moodpress4_build/README-ANDROID.md	2026-10-16 11:38:43.729722848 +0000
 @@ -1,4 +1,6 @@
 -# MoodPress Android 2.5.0 — release candidate
-+# MoodPress Android 4.0.0 — build candidate
++# MoodPress Android 4.0.1 — build candidate
 +
-+# MoodPress Android 4.0.0 — build candidate
++# MoodPress Android 4.0.1 — build candidate
  
  MoodPress is een bestaande .NET MAUI/C#-app met gedeelde Core-logica en geautomatiseerde tests. Deze kandidaat verbetert onder andere Home-snelkoppelingen, breedteafhankelijke indeling, schermlezerlabels en veilige bestandsafhandeling.
  
@@ -2557,12 +2557,12 @@ diff -ruN moodpress_base_flat/README-ANDROID.md moodpress4_build/README-ANDROID.
  Voor lokale tests: installeer de .NET 8 SDK. Voor Android: .NET 10 SDK, MAUI Android-workload en Java 17. Zie `docs/quality/RELEASE-RUNBOOK-2.5.0.md` en `docs/quality/ANDROID-ACCEPTATIETEST-2.5.0.md`.
 +
 +
-+## MoodPress 4.0.0 — Android-varianten
-+- Telefoon: package ID `nl.mijngevoel.app`, versie `4.0.0`, versionCode `35`.
-+- Tablet: package ID `nl.mijngevoel.app.tablet`, versie `4.0.0`, versionCode `35`.
++## MoodPress 4.0.1 — Android-varianten
++- Telefoon: package ID `nl.mijngevoel.app`, versie `4.0.1`, versionCode `35`.
++- Tablet: package ID `nl.mijngevoel.app.tablet`, versie `4.0.1`, versionCode `35`.
 +- Dezelfde code gebruikt responsieve schermindeling; op brede schermen worden meer kolommen gebruikt.
 +- De workflow `.github/workflows/moodpress-4-android.yml` voert tests uit en bouwt vier ondertekende artefacten (telefoon/tablet APK en AAB).
-+- Raadpleeg `MOODPRESS-4.0-START-HIER.md` en `RELEASE-NOTES-4.0.0.md`. Een groene build en handmatige acceptatietests zijn nog vereist.
++- Raadpleeg `MOODPRESS-4.0-START-HIER.md` en `RELEASE-NOTES-4.0.1.md`. Een groene build en handmatige acceptatietests zijn nog vereist.
 diff -ruN moodpress_base_flat/README.md moodpress4_build/README.md
 --- moodpress_base_flat/README.md	2026-10-15 06:30:40.000000000 +0000
 +++ moodpress4_build/README.md	2026-10-16 11:38:44.129705415 +0000
@@ -2572,16 +2572,16 @@ diff -ruN moodpress_base_flat/README.md moodpress4_build/README.md
  De planstatus is bewust eerlijk gesplitst tussen functies in code en externe validatie. Een echte build, upgrade met behoud van gegevens, Android-meldingen op een toestel, TalkBack, doelgroepfeedback, onafhankelijke security-review en formele AVG/DPIA-beoordeling kunnen niet worden afgetekend op alleen basis van broncode. Cloud-synchronisatie en een live begeleidersportaal zijn niet aanwezig; er worden geen automatische noodmeldingen beloofd.
 +
 +
-+## MoodPress 4.0.0 Android build candidate
++## MoodPress 4.0.1 Android build candidate
 +See `MOODPRESS-4.0-START-HIER.md` for the four Android artifacts and build workflow. This source package has not yet been compiled in this environment.
-diff -ruN moodpress_base_flat/RELEASE-NOTES-4.0.0.md moodpress4_build/RELEASE-NOTES-4.0.0.md
---- moodpress_base_flat/RELEASE-NOTES-4.0.0.md	1970-01-01 00:00:00.000000000 +0000
-+++ moodpress4_build/RELEASE-NOTES-4.0.0.md	2026-10-16 11:38:44.105706460 +0000
+diff -ruN moodpress_base_flat/RELEASE-NOTES-4.0.1.md moodpress4_build/RELEASE-NOTES-4.0.1.md
+--- moodpress_base_flat/RELEASE-NOTES-4.0.1.md	1970-01-01 00:00:00.000000000 +0000
++++ moodpress4_build/RELEASE-NOTES-4.0.1.md	2026-10-16 11:38:44.105706460 +0000
 @@ -0,0 +1,60 @@
-+# MoodPress 4.0.0 — Android telefoon en tablet
++# MoodPress 4.0.1 — Android telefoon en tablet
 +
 +## Versie en pakketten
-+- Zichtbare versie: `4.0.0`
++- Zichtbare versie: `4.0.1`
 +- Android `versionCode`: `35` (verhoogd ten opzichte van de meegeleverde 2.5.2-broncode)
 +- Telefoon package ID: `nl.mijngevoel.app` (behoudt de bestaande Android-installatie-identiteit)
 +- Tablet package ID: `nl.mijngevoel.app.tablet` (aparte installatie, zodat beide varianten naast elkaar kunnen bestaan)
@@ -2598,7 +2598,7 @@ diff -ruN moodpress_base_flat/RELEASE-NOTES-4.0.0.md moodpress4_build/RELEASE-NO
 +- Versleutelde lokale opslag, accountbeveiliging, export/back-up en privacyfuncties.
 +
 +## Release-status
-+Deze broncode is voorbereid voor versie 4.0.0 en de workflow bouwt vier ondertekende artefacten: telefoon-APK, telefoon-AAB, tablet-APK en tablet-AAB. De workflow moet in GitHub Actions worden uitgevoerd met de bestaande Android signing secrets. Een succesvolle workflow en echte apparaatacceptatietests zijn nodig voordat de bestanden als gecontroleerde release kunnen worden beschouwd.
++Deze broncode is voorbereid voor versie 4.0.1 en de workflow bouwt vier ondertekende artefacten: telefoon-APK, telefoon-AAB, tablet-APK en tablet-AAB. De workflow moet in GitHub Actions worden uitgevoerd met de bestaande Android signing secrets. Een succesvolle workflow en echte apparaatacceptatietests zijn nodig voordat de bestanden als gecontroleerde release kunnen worden beschouwd.
 +
 +## Belangrijke beperking
 +Deze pakketverhoging bevat geen online synchronisatie of live online ouder-/begeleiderportaal. De huidige ondersteunersomgeving is lokaal en werkt met bewust gedeelde bestanden; een echte online portal vraagt een beveiligde backend en aanvullende privacy/security-implementatie.
@@ -2637,7 +2637,7 @@ diff -ruN moodpress_base_flat/RELEASE-NOTES-4.0.0.md moodpress4_build/RELEASE-NO
 +- Privacyveilige Android-startscherm-widget.
 +- Back-up-controle, SHA-256 en herinnering; handmatige toegankelijkheidschecklist.
 +
-+Zie `docs/MOODPRESS-4.0.0-EXTRA-IMPLEMENTATIE.md` voor de precieze implementatiegrenzen. Live cloud-synchronisatie is niet inbegrepen. Lokale statische controles en XML-validatie zijn geslaagd; de C#-test/build en echte toesteltests moeten nog in GitHub Actions en op apparaten draaien.
++Zie `docs/MOODPRESS-4.0.1-EXTRA-IMPLEMENTATIE.md` voor de precieze implementatiegrenzen. Live cloud-synchronisatie is niet inbegrepen. Lokale statische controles en XML-validatie zijn geslaagd; de C#-test/build en echte toesteltests moeten nog in GitHub Actions en op apparaten draaien.
 diff -ruN moodpress_base_flat/android-release.yml moodpress4_build/android-release.yml
 --- moodpress_base_flat/android-release.yml	2026-10-15 06:30:40.000000000 +0000
 +++ moodpress4_build/android-release.yml	2026-10-16 10:21:47.000000000 +0000
@@ -2716,11 +2716,11 @@ diff -ruN moodpress_base_flat/android-release.yml moodpress4_build/android-relea
 -          grep -q '<ApplicationVersion>23</ApplicationVersion>' "$project"
 -          grep -q 'Xamarin.AndroidX.Biometric" Version="1.1.0.33"' "$project"
 +          project="MijnGevoel.Android/MijnGevoel.Android.csproj"
-+          grep -q '<ApplicationDisplayVersion>4.0.0</ApplicationDisplayVersion>' "$project"
-+          grep -q '<ApplicationVersion>35</ApplicationVersion>' "$project"
++          grep -q '<ApplicationDisplayVersion>4.0.1</ApplicationDisplayVersion>' "$project"
++          grep -q '<ApplicationVersion>36</ApplicationVersion>' "$project"
 +          grep -q 'MoodPressTarget' "$project"
 +          grep -q 'nl.mijngevoel.app.tablet' "$project"
-           grep -q 'Plugin.Maui.Audio" Version="4.0.0"' "$project"
+           grep -q 'Plugin.Maui.Audio" Version="4.0.1"' "$project"
 -          grep -q 'android.permission.POST_NOTIFICATIONS' source/MijnGevoel-Android/MijnGevoel.Android/Platforms/Android/AndroidManifest.xml
 +          grep -q 'CommunityToolkit.Maui" Version="15.0.1"' "$project"
  
@@ -2829,7 +2829,7 @@ diff -ruN moodpress_base_flat/android-release.yml moodpress4_build/android-relea
 +                find "$out" -maxdepth 5 -type f -print || true
 +                exit 1
 +              fi
-+              cp "$artifact" "artifacts/MoodPress-4.0.0-${target}.${ext}"
++              cp "$artifact" "artifacts/MoodPress-4.0.1-${target}.${ext}"
 +            done
 +          done
  
@@ -2849,7 +2849,7 @@ diff -ruN moodpress_base_flat/android-release.yml moodpress4_build/android-relea
 -          cd ../../artifacts
 -          sha256sum MoodPress-Android-release.apk MoodPress-Android-release.aab | tee SHA256SUMS.txt
 +          cd artifacts
-+          sha256sum MoodPress-4.0.0-Phone.apk MoodPress-4.0.0-Phone.aab MoodPress-4.0.0-Tablet.apk MoodPress-4.0.0-Tablet.aab | tee SHA256SUMS.txt
++          sha256sum MoodPress-4.0.1-Phone.apk MoodPress-4.0.1-Phone.aab MoodPress-4.0.1-Tablet.apk MoodPress-4.0.1-Tablet.aab | tee SHA256SUMS.txt
            ls -lh
  
 -      - name: Upload APK, AAB en checksums
@@ -2862,7 +2862,7 @@ diff -ruN moodpress_base_flat/android-release.yml moodpress4_build/android-relea
 -            artifacts/MoodPress-Android-release.apk
 -            artifacts/MoodPress-Android-release.aab
 -            artifacts/SHA256SUMS.txt
-+          name: MoodPress-4.0.0-Android-telefoon-tablet
++          name: MoodPress-4.0.1-Android-telefoon-tablet
 +          path: artifacts/*
            if-no-files-found: error
            retention-days: 30
@@ -2873,11 +2873,11 @@ diff -ruN moodpress_base_flat/android-release.yml moodpress4_build/android-relea
 -        shell: bash
 -        run: rm -f "$RUNNER_TEMP/mijngevoel-release.keystore"
 +        run: rm -f "$RUNNER_TEMP/moodpress-release.keystore"
-diff -ruN moodpress_base_flat/docs/ANDROID-ACCEPTATIETEST-4.0.0.md moodpress4_build/docs/ANDROID-ACCEPTATIETEST-4.0.0.md
---- moodpress_base_flat/docs/ANDROID-ACCEPTATIETEST-4.0.0.md	1970-01-01 00:00:00.000000000 +0000
-+++ moodpress4_build/docs/ANDROID-ACCEPTATIETEST-4.0.0.md	2026-10-16 11:09:21.000000000 +0000
+diff -ruN moodpress_base_flat/docs/ANDROID-ACCEPTATIETEST-4.0.1.md moodpress4_build/docs/ANDROID-ACCEPTATIETEST-4.0.1.md
+--- moodpress_base_flat/docs/ANDROID-ACCEPTATIETEST-4.0.1.md	1970-01-01 00:00:00.000000000 +0000
++++ moodpress4_build/docs/ANDROID-ACCEPTATIETEST-4.0.1.md	2026-10-16 11:09:21.000000000 +0000
 @@ -0,0 +1,70 @@
-+# MoodPress 4.0.0 — acceptatietest Android-telefoon en tablet
++# MoodPress 4.0.1 — acceptatietest Android-telefoon en tablet
 +
 +Voer deze controle pas uit nadat GitHub Actions een APK en AAB voor beide varianten heeft gemaakt. Een statische controle is geen vervanging voor deze toesteltest.
 +
@@ -2947,13 +2947,13 @@ diff -ruN moodpress_base_flat/docs/ANDROID-ACCEPTATIETEST-4.0.0.md moodpress4_bu
 +- [ ] Controleer of de laatste back-updatum en SHA-256-controlesom kloppen.
 +- [ ] Loop de handmatige toegankelijkheidschecklist door; markeer hem niet als voltooide certificering zonder fysieke TalkBack-toesteltest.
 +- [ ] Voeg de MoodPress-widget toe via het Android-widgetmenu en open de app door erop te tikken.
-diff -ruN moodpress_base_flat/docs/MOODPRESS-4.0.0-EXTRA-IMPLEMENTATIE.md moodpress4_build/docs/MOODPRESS-4.0.0-EXTRA-IMPLEMENTATIE.md
---- moodpress_base_flat/docs/MOODPRESS-4.0.0-EXTRA-IMPLEMENTATIE.md	1970-01-01 00:00:00.000000000 +0000
-+++ moodpress4_build/docs/MOODPRESS-4.0.0-EXTRA-IMPLEMENTATIE.md	2026-10-16 11:08:48.000000000 +0000
+diff -ruN moodpress_base_flat/docs/MOODPRESS-4.0.1-EXTRA-IMPLEMENTATIE.md moodpress4_build/docs/MOODPRESS-4.0.1-EXTRA-IMPLEMENTATIE.md
+--- moodpress_base_flat/docs/MOODPRESS-4.0.1-EXTRA-IMPLEMENTATIE.md	1970-01-01 00:00:00.000000000 +0000
++++ moodpress4_build/docs/MOODPRESS-4.0.1-EXTRA-IMPLEMENTATIE.md	2026-10-16 11:08:48.000000000 +0000
 @@ -0,0 +1,31 @@
-+# MoodPress 4.0.0 — extra functies verwerkt
++# MoodPress 4.0.1 — extra functies verwerkt
 +
-+**Bronbasis:** meegeleverde Android-projectbroncode 2.5.2, aangepast voor MoodPress 4.0.0.  
++**Bronbasis:** meegeleverde Android-projectbroncode 2.5.2, aangepast voor MoodPress 4.0.1.  
 +**Datum:** 16 oktober 2026.
 +
 +## Geïmplementeerd in de broncode
@@ -2982,14 +2982,14 @@ diff -ruN moodpress_base_flat/docs/MOODPRESS-4.0.0-EXTRA-IMPLEMENTATIE.md moodpr
 +- Android-resource-XML is gecontroleerd met een XML-parser.
 +- Unit-tests dekken versleutelde overdrachtskaarten/ontvangstbevestiging, herkenning van versleutelde records met de juiste kluissleutel én het AES-GCM-overdrachtsformaat (roundtrip, verkeerd wachtwoord, manipulatie en ongeldige invoer). De overdracht-encryptie staat in `MijnGevoel.Core/Data/SecureDeviceTransfer.cs`, zodat zij los van MAUI getest kan worden.
 +- **Niet lokaal uitgevoerd:** `dotnet test`, Android-compilatie, APK/AAB-publicatie, emulator- en fysieke toesteltests. De huidige uitvoeromgeving heeft geen .NET SDK. De GitHub Actions-workflow moet dus nog draaien en daarna moet de acceptatietest op telefoon en tablet gebeuren.
-diff -ruN moodpress_base_flat/docs/MOODPRESS-4.0.0-NIEUWSTE-FUNCTIES.md moodpress4_build/docs/MOODPRESS-4.0.0-NIEUWSTE-FUNCTIES.md
---- moodpress_base_flat/docs/MOODPRESS-4.0.0-NIEUWSTE-FUNCTIES.md	1970-01-01 00:00:00.000000000 +0000
-+++ moodpress4_build/docs/MOODPRESS-4.0.0-NIEUWSTE-FUNCTIES.md	2026-10-16 10:25:27.000000000 +0000
+diff -ruN moodpress_base_flat/docs/MOODPRESS-4.0.1-NIEUWSTE-FUNCTIES.md moodpress4_build/docs/MOODPRESS-4.0.1-NIEUWSTE-FUNCTIES.md
+--- moodpress_base_flat/docs/MOODPRESS-4.0.1-NIEUWSTE-FUNCTIES.md	1970-01-01 00:00:00.000000000 +0000
++++ moodpress4_build/docs/MOODPRESS-4.0.1-NIEUWSTE-FUNCTIES.md	2026-10-16 10:25:27.000000000 +0000
 @@ -0,0 +1,42 @@
-+# MoodPress 4.0.0 — nieuwste functies onderzocht en toegevoegd
++# MoodPress 4.0.1 — nieuwste functies onderzocht en toegevoegd
 +
 +**Onderzoeksdatum:** 16 oktober 2026  
-+**Basis:** meegeleverde `MoodPress-Android-compleet-2.5.2.zip` en het werkpakket MoodPress 4.0.0.
++**Basis:** meegeleverde `MoodPress-Android-compleet-2.5.2.zip` en het werkpakket MoodPress 4.0.1.
 +
 +## Wat is onderzocht
 +
@@ -3021,13 +3021,13 @@ diff -ruN moodpress_base_flat/docs/MOODPRESS-4.0.0-NIEUWSTE-FUNCTIES.md moodpres
 +
 +- De MoodPress 4.0-statische controles zijn uitgevoerd en geslaagd.
 +- De projectbestanden en package-references zijn gecontroleerd; de nieuwe toolkitversie past bij .NET 10.
-+- Er is een acceptatietest toegevoegd in `docs/ANDROID-ACCEPTATIETEST-4.0.0.md` voor telefoon en tablet, inclusief spraakherkenning, herstel van concepten, tekenen, TalkBack en Android 17.
-+- **Niet lokaal uitgevoerd:** C#-compilatie, `dotnet test`, APK/AAB-build, installatie op echte apparaten en handmatige TalkBack-tests. De werkomgeving heeft geen .NET SDK. Die stappen moeten door de GitHub Actions-workflow en daarna op echte telefoon/tablet worden uitgevoerd voordat MoodPress 4.0.0 als gecontroleerde release kan worden beschouwd.
++- Er is een acceptatietest toegevoegd in `docs/ANDROID-ACCEPTATIETEST-4.0.1.md` voor telefoon en tablet, inclusief spraakherkenning, herstel van concepten, tekenen, TalkBack en Android 17.
++- **Niet lokaal uitgevoerd:** C#-compilatie, `dotnet test`, APK/AAB-build, installatie op echte apparaten en handmatige TalkBack-tests. De werkomgeving heeft geen .NET SDK. Die stappen moeten door de GitHub Actions-workflow en daarna op echte telefoon/tablet worden uitgevoerd voordat MoodPress 4.0.1 als gecontroleerde release kan worden beschouwd.
 +
 +## Bestanden
 +
-+- `MoodPress-Android-compleet-4.0.0-nieuwste-functies.zip`: bijgewerkte broncode.
-+- `MoodPress-Android-compleet-4.0.0-nieuwste-functies-SHA256SUMS.txt`: SHA-256-controlesom van het ZIP-bestand.
++- `MoodPress-Android-compleet-4.0.1-nieuwste-functies.zip`: bijgewerkte broncode.
++- `MoodPress-Android-compleet-4.0.1-nieuwste-functies-SHA256SUMS.txt`: SHA-256-controlesom van het ZIP-bestand.
 diff -ruN moodpress_base_flat/scripts/check-moodpress-4.sh moodpress4_build/scripts/check-moodpress-4.sh
 --- moodpress_base_flat/scripts/check-moodpress-4.sh	1970-01-01 00:00:00.000000000 +0000
 +++ moodpress4_build/scripts/check-moodpress-4.sh	2026-10-16 11:40:27.553196947 +0000
@@ -3039,15 +3039,15 @@ diff -ruN moodpress_base_flat/scripts/check-moodpress-4.sh moodpress4_build/scri
 +catalog="MijnGevoel.Android/FeatureCatalog.cs"
 +workflow=".github/workflows/moodpress-4-android.yml"
 +test -f "$project" && test -f "$ui" && test -f "$catalog" && test -f "$workflow"
-+grep -q '<ApplicationDisplayVersion>4.0.0</ApplicationDisplayVersion>' "$project"
-+grep -q '<ApplicationVersion>35</ApplicationVersion>' "$project"
++grep -q '<ApplicationDisplayVersion>4.0.1</ApplicationDisplayVersion>' "$project"
++grep -q '<ApplicationVersion>36</ApplicationVersion>' "$project"
 +grep -q 'nl.mijngevoel.app.tablet' "$project"
 +grep -q 'void BuildDraw' "$ui"
 +grep -q 'StartVoiceRecordingAsync' "$ui"
 +grep -q 'PlayVoiceNoteAsync' "$ui"
 +grep -q 'FeatureKind.WhoWorks' "$catalog"
 +grep -q 'SemanticProperties.SetDescription(drawingView' "$ui"
-+grep -q 'MoodPress-4.0.0-${target}.${ext}' "$workflow"
++grep -q 'MoodPress-4.0.1-${target}.${ext}' "$workflow"
 +grep -q 'CommunityToolkit.Maui" Version="15.0.1"' "$project"
 +grep -q 'TryStartSpeechToTextAsync' "$ui"
 +grep -q 'JournalDraftEntry' "$ui"
