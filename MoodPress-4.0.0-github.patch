@@ -3970,3 +3970,116 @@ diff -ruN moodpress_base_flat/MijnGevoel.Core/MijnGevoel.Core.csproj moodpress4_
 +grep -q 'bool _openingFeature;' "$more"
 +grep -q 'Interlocked.Exchange(ref _bottomTabNavigationInProgress, 1)' "$tabs"
 +grep -q 'Interlocked.Exchange(ref _bottomTabNavigationInProgress, 0)' "$tabs"
+--- a/MijnGevoel.Android/MorePage.cs
++++ b/MijnGevoel.Android/MorePage.cs
+@@ -39,8 +39,9 @@
+         {
+             // Het eerste tekenen gebeurt pas nadat de pagina in de navigatiestack staat.
+             // Zo kan een layoutfout de tik op de navigatieknop niet blokkeren.
+-            if (_hasRendered || _renderFailed) RenderResultsSafely(force: true);
++            RenderResultsSafely(force: true);
+         };
++        _search.Completed += (_, _) => RenderResultsSafely(force: true);
+         _results = new VerticalStackLayout { Spacing = 12 };
+         _root = new VerticalStackLayout
+         {
+@@ -140,41 +141,55 @@
+         _results.Children.Clear();
+         var query = (_search.Text ?? string.Empty).Trim();
+         var all = FeatureCatalog.All;
+-        // The More page is the complete directory; saved Home shortcuts must not hide functions.
++        // Do not consult Home shortcut preferences here: every catalogued feature belongs in this directory.
+         var matches = all.Where(item => string.IsNullOrWhiteSpace(query)
+                 || item.Label.Contains(query, StringComparison.CurrentCultureIgnoreCase)
++                || item.Kind.ToString().Contains(query, StringComparison.CurrentCultureIgnoreCase)
+                 || item.Group.Contains(query, StringComparison.CurrentCultureIgnoreCase)
+                 || item.Description.Contains(query, StringComparison.CurrentCultureIgnoreCase))
++            .OrderBy(item => item.Group, StringComparer.CurrentCulture)
++            .ThenBy(item => item.Label, StringComparer.CurrentCulture)
+             .ToArray();
+
+         if (matches.Length == 0)
+         {
+             _results.Children.Add(AppUi.Card(new VerticalStackLayout
+             {
+-                Spacing = 6,
+-                Children = { AppUi.Label("Geen functie gevonden", title: true), AppUi.Label("Probeer een ander woord of maak de zoekopdracht korter.", muted: true) }
++                Spacing = 8,
++                Children =
++                {
++                    AppUi.Label("Geen functie gevonden", title: true),
++                    AppUi.Label("Probeer een ander woord, bijvoorbeeld tekenen, dagboek, inspreken of rust.", muted: true),
++                    AppUi.Button("Zoekopdracht wissen", () => _search.Text = string.Empty, quiet: true)
++                }
+             }));
+         }
+         else
+         {
++            // Make the three essential create/write features prominent, even in an unfiltered list.
++            if (string.IsNullOrWhiteSpace(query))
++            {
++                _results.Children.Add(AppUi.Label("Maken en vastleggen", title: true));
++                var essentials = new VerticalStackLayout { Spacing = 8 };
++                foreach (var item in matches.Where(x => x.Kind is FeatureKind.Draw or FeatureKind.Notes or FeatureKind.Journal))
++                    essentials.Children.Add(CreateCard(item));
++                if (essentials.Children.Count > 0) _results.Children.Add(essentials);
++            }
+             foreach (var group in matches.GroupBy(x => x.Group))
+             {
++                var items = group.Where(item => !string.IsNullOrWhiteSpace(query)
++                    || item.Kind is not (FeatureKind.Draw or FeatureKind.Notes or FeatureKind.Journal)).ToArray();
++                if (items.Length == 0) continue;
+                 _results.Children.Add(AppUi.Label(group.Key, title: true));
+-                var columns = Math.Clamp(_columns, 2, 4);
+-                var grid = new Grid { ColumnSpacing = 9, RowSpacing = 9, HorizontalOptions = LayoutOptions.Fill };
+-                for (int column = 0; column < columns; column++) grid.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Star));
+-                var items = group.OrderBy(x => x.Kind == FeatureKind.Settings ? 0 : 1).ThenBy(x => x.Label, StringComparer.CurrentCulture).ToArray();
+-                for (int row = 0; row < (items.Length + columns - 1) / columns; row++) grid.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
+-                for (int i = 0; i < items.Length; i++)
+-                {
+-                    var item = items[i];
+-                    grid.Add(CreateCard(item), i % columns, i / columns);
+-                }
+-                _results.Children.Add(grid);
++                var stack = new VerticalStackLayout { Spacing = 8 };
++                foreach (var item in items)
++                    stack.Children.Add(CreateCard(item));
++                _results.Children.Add(stack);
+             }
++            _results.Children.Add(AppUi.Label($"{matches.Length} functies gevonden.", muted: true));
+         }
+
+-        _results.Children.Add(AppUi.Label("Je gegevens blijven privé. Een functie delen gebeurt alleen na jouw keuze.", muted: true));
++        _results.Children.Add(AppUi.Label("Je gegevens blijven privé. Delen gebeurt alleen na jouw keuze.", muted: true));
+         _results.Children.Add(AppUi.Button("🔒 Sessie vergrendelen", async () => await ((App)Application.Current!).LockToLoginAsync(), danger: true));
+         _results.Children.Add(AppUi.AsyncButton("🚪 Uitloggen en sessie vergeten", async () =>
+         {
+--- a/MijnGevoel.Android/DashboardPage.cs
++++ b/MijnGevoel.Android/DashboardPage.cs
+@@ -167,6 +167,9 @@
+                 {
+                     AppUi.Label("Meer functies", title: true),
+                     AppUi.Label("Rust, communicatie, doelen, dagboek, privacy en instellingen vind je overzichtelijk bij elkaar onder Meer.", muted: true),
++                    AppUi.AsyncButton("🎨 Tekenen", async () => await Navigation.PushAsync(new FeaturePage(FeatureKind.Draw)), quiet: true),
++                    AppUi.AsyncButton("📝 Van me afschrijven", async () => await Navigation.PushAsync(new FeaturePage(FeatureKind.Notes)), quiet: true),
++                    AppUi.AsyncButton("📓 Dagboek", async () => await Navigation.PushAsync(new FeaturePage(FeatureKind.Journal)), quiet: true),
+                     AppUi.AsyncButton("☰ Bekijk alle functies", async () => await OpenMorePageAsync(), quiet: true)
+                 }
+             }));
+--- a/scripts/check-moodpress-4.sh
++++ b/scripts/check-moodpress-4.sh
+@@ -63,8 +63,14 @@
+ 
+ # Navigation regressions for the full directory and bottom-tab transition guard.
+ more="MijnGevoel.Android/MorePage.cs"
++dashboard="MijnGevoel.Android/DashboardPage.cs"
+ grep -q 'var matches = all.Where(item => string.IsNullOrWhiteSpace(query)' "$more"
+ grep -q 'bool _openingFeature;' "$more"
+ grep -q 'Interlocked.Exchange(ref _bottomTabNavigationInProgress, 1)' "MijnGevoel.Android/AppUi.cs"
+ grep -q 'Interlocked.Exchange(ref _bottomTabNavigationInProgress, 0)' "MijnGevoel.Android/AppUi.cs"
++grep -q '_search.Completed' "$more"
++grep -q 'Zoekopdracht wissen' "$more"
++grep -q 'FeatureKind.Draw' "$dashboard"
++grep -q 'FeatureKind.Notes' "$dashboard"
++grep -q 'FeatureKind.Journal' "$dashboard"
+ echo "MoodPress warning-regression checks passed."
