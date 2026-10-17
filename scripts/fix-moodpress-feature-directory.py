@@ -188,7 +188,8 @@ if "_focusVoiceCapture" in feature and "FocusVoiceCaptureAsync" not in feature:
 required_feature_markers = [
     "bool _focusVoiceCapture;",
     "FocusVoiceCaptureAsync",
-    "ScrollToAsync(_voiceRecordButton, ScrollToPosition.Center, true)",
+    "var target = _speechToTextButton ?? _voiceRecordButton;",
+    "ScrollToAsync(target, ScrollToPosition.Center, true)",
     "focusVoiceCapture: false",
 ]
 for marker in required_feature_markers[:3]:
