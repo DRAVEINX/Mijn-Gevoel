@@ -3983,11 +3983,12 @@ diff -ruN moodpress_base_flat/MijnGevoel.Core/MijnGevoel.Core.csproj moodpress4_
          _results = new VerticalStackLayout { Spacing = 12 };
          _root = new VerticalStackLayout
          {
-@@ -140,41 +141,55 @@
+@@ -140,42 +141,55 @@
          _results.Children.Clear();
          var query = (_search.Text ?? string.Empty).Trim();
          var all = FeatureCatalog.All;
--        // The More page is the complete directory; saved Home shortcuts must not hide functions.
+-        // This page is the complete function directory. Home visibility settings must not
+-        // hide features here; otherwise older saved preferences can make most of the app vanish.
 +        // Do not consult Home shortcut preferences here: every catalogued feature belongs in this directory.
          var matches = all.Where(item => string.IsNullOrWhiteSpace(query)
                  || item.Label.Contains(query, StringComparison.CurrentCultureIgnoreCase)
@@ -3997,7 +3998,7 @@ diff -ruN moodpress_base_flat/MijnGevoel.Core/MijnGevoel.Core.csproj moodpress4_
 +            .OrderBy(item => item.Group, StringComparer.CurrentCulture)
 +            .ThenBy(item => item.Label, StringComparer.CurrentCulture)
              .ToArray();
-
+ 
          if (matches.Length == 0)
          {
              _results.Children.Add(AppUi.Card(new VerticalStackLayout
@@ -4048,7 +4049,7 @@ diff -ruN moodpress_base_flat/MijnGevoel.Core/MijnGevoel.Core.csproj moodpress4_
              }
 +            _results.Children.Add(AppUi.Label($"{matches.Length} functies gevonden.", muted: true));
          }
-
+ 
 -        _results.Children.Add(AppUi.Label("Je gegevens blijven privé. Een functie delen gebeurt alleen na jouw keuze.", muted: true));
 +        _results.Children.Add(AppUi.Label("Je gegevens blijven privé. Delen gebeurt alleen na jouw keuze.", muted: true));
          _results.Children.Add(AppUi.Button("🔒 Sessie vergrendelen", async () => await ((App)Application.Current!).LockToLoginAsync(), danger: true));
@@ -4068,15 +4069,11 @@ diff -ruN moodpress_base_flat/MijnGevoel.Core/MijnGevoel.Core.csproj moodpress4_
              }));
 --- a/scripts/check-moodpress-4.sh
 +++ b/scripts/check-moodpress-4.sh
-@@ -63,8 +63,14 @@
- 
- # Navigation regressions for the full directory and bottom-tab transition guard.
- more="MijnGevoel.Android/MorePage.cs"
-+dashboard="MijnGevoel.Android/DashboardPage.cs"
- grep -q 'var matches = all.Where(item => string.IsNullOrWhiteSpace(query)' "$more"
+@@ -70,4 +70,10 @@
  grep -q 'bool _openingFeature;' "$more"
- grep -q 'Interlocked.Exchange(ref _bottomTabNavigationInProgress, 1)' "MijnGevoel.Android/AppUi.cs"
- grep -q 'Interlocked.Exchange(ref _bottomTabNavigationInProgress, 0)' "MijnGevoel.Android/AppUi.cs"
+ grep -q 'Interlocked.Exchange(ref _bottomTabNavigationInProgress, 1)' "$tabs"
+ grep -q 'Interlocked.Exchange(ref _bottomTabNavigationInProgress, 0)' "$tabs"
++dashboard="MijnGevoel.Android/DashboardPage.cs"
 +grep -q '_search.Completed' "$more"
 +grep -q 'Zoekopdracht wissen' "$more"
 +grep -q 'FeatureKind.Draw' "$dashboard"
