@@ -4078,3 +4078,17 @@ diff -ruN moodpress_base_flat/MijnGevoel.Core/MijnGevoel.Core.csproj moodpress4_
 +grep -q 'FeatureKind.Notes' "$dashboard"
 +grep -q 'FeatureKind.Journal' "$dashboard"
  echo "MoodPress warning-regression checks passed."
+--- a/MijnGevoel.Android/FeatureCatalog.cs
++++ b/MijnGevoel.Android/FeatureCatalog.cs
+@@ -57,2 +57,2 @@
+-        new(FeatureKind.Notes, "Van me afschrijven", "📝", "Creatief en dagboek", "Schrijf iets voor jezelf op."),
+-        new(FeatureKind.Journal, "Dagboek", "📓", "Creatief en dagboek", "Bekijk en beheer je dagboeknotities."),
++        new(FeatureKind.Notes, "Van me afschrijven", "📝", "Creatief en dagboek", "Schrijf of spreek in: spraak naar tekst, een kort geluidsbericht opnemen en privé bewaren."),
++        new(FeatureKind.Journal, "Dagboek", "📓", "Creatief en dagboek", "Schrijf hoe je dag was, spreek tekst in, neem een geluidsbericht op en beheer je dagboeknotities."),
+--- a/scripts/check-moodpress-4.sh
++++ b/scripts/check-moodpress-4.sh
+@@ -76,2 +76,4 @@
+ grep -q 'FeatureKind.Journal' "$dashboard"
++grep -q 'spraak naar tekst' "MijnGevoel.Android/FeatureCatalog.cs"
++grep -q 'spreek tekst in' "MijnGevoel.Android/FeatureCatalog.cs"
+ echo "MoodPress warning-regression checks passed."
