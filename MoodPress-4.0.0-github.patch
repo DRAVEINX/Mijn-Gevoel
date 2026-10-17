@@ -1213,15 +1213,28 @@ diff -ruN moodpress_base_flat/MijnGevoel.Android/FeaturePage.cs moodpress4_build
  
      static readonly (string Emoji, string Name, string Hex)[] Moods =
      {
-@@ -128,6 +142,8 @@
+@@ -128,6 +142,9 @@
      {
          base.OnAppearing();
          AppSession.Touch();
 +        if (_journalDraftTimer is not null && !_journalDraftTimer.IsRunning)
 +            _journalDraftTimer.Start();
++        if (_focusVoiceCapture) _ = FocusVoiceCaptureAsync();
          if (_kind == FeatureKind.Timer)
          {
              RefreshTimerState(announceCompletion: true);
+@@ -139,7 +154,8 @@
+     {
+         _focusVoiceCapture = false;
+         try
+         {
+             await Task.Delay(180);
+-            if (_pageScrollView is not null && _voiceRecordButton is not null)
+-                await _pageScrollView.ScrollToAsync(_voiceRecordButton, ScrollToPosition.Center, true);
++            var target = _speechToTextButton ?? _voiceRecordButton;
++            if (_pageScrollView is not null && target is not null)
++                await _pageScrollView.ScrollToAsync(target, ScrollToPosition.Center, true);
+
 @@ -146,24 +162,36 @@
          // zodat de tijd blijft doorlopen als de gebruiker naar een ander scherm gaat.
          _timer?.Stop();

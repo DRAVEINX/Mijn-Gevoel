@@ -41,6 +41,8 @@ jobs:
           python3 scripts/fix-moodpress-feature-directory.py source/MijnGevoel-Android
           cd source/MijnGevoel-Android
           bash scripts/check-moodpress-4.sh
+          grep -q 'if (_focusVoiceCapture) _ = FocusVoiceCaptureAsync();' MijnGevoel.Android/FeaturePage.cs
+          grep -q 'ScrollToAsync(target, ScrollToPosition.Center, true)' MijnGevoel.Android/FeaturePage.cs
           grep -q '<ApplicationDisplayVersion>4.0.1</ApplicationDisplayVersion>' MijnGevoel.Android/MijnGevoel.Android.csproj
           grep -q '<ApplicationVersion>36</ApplicationVersion>' MijnGevoel.Android/MijnGevoel.Android.csproj
           echo "MoodPress 4.0 source patch applied and static checks passed."
