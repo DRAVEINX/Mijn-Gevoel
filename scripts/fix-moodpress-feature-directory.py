@@ -161,7 +161,7 @@ feature = feature.replace(
     "        _pageScrollView = new ScrollView { Content = _root };\n        Content = _pageScrollView;\n        Build();",
     1
 )
-if "_focusVoiceCapture" in feature and "FocusVoiceCaptureAsync" not in feature:
+if "_focusVoiceCapture" in feature and "async Task FocusVoiceCaptureAsync()" not in feature:
     feature = feature.replace(
         "        AppSession.Touch();\n        if (_kind == FeatureKind.Timer)",
         "        AppSession.Touch();\n        if (_focusVoiceCapture) _ = FocusVoiceCaptureAsync();\n        if (_kind == FeatureKind.Timer)",
@@ -184,6 +184,13 @@ if "_focusVoiceCapture" in feature and "FocusVoiceCaptureAsync" not in feature:
     if marker not in feature:
         raise SystemExit("FeaturePage.cs: OnDisappearing marker not found.")
     feature = feature.replace(marker, focus_method + marker, 1)
+
+# Always focus the speech-to-text control first, falling back to the audio recorder.
+feature = feature.replace(
+    "            if (_pageScrollView is not null && _voiceRecordButton is not null)\n                await _pageScrollView.ScrollToAsync(_voiceRecordButton, ScrollToPosition.Center, true);",
+    "            var target = _speechToTextButton ?? _voiceRecordButton;\n            if (_pageScrollView is not null && target is not null)\n                await _pageScrollView.ScrollToAsync(target, ScrollToPosition.Center, true);",
+    1
+)
 
 required_feature_markers = [
     "bool _focusVoiceCapture;",
