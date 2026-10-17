@@ -6,7 +6,12 @@ on:
     paths:
       - "MoodPress-Windows-source-2.3.0.zip"
       - "MoodPress-Windows-source-2.3.0-fixed.zip"
+      - "MoodPress-Android-compleet-2.5.2.zip"
       - ".github/workflows/moodpress-windows-msi-2.3.0.yml"
+      - "scripts/apply-cloud-platform.py"
+      - "scripts/patch_journal_accessibility.py"
+      - "platform-port/shared/**"
+      - "MoodPress-4.0.0-github.patch"
 
 permissions:
   contents: read
@@ -42,8 +47,13 @@ jobs:
           }
           Write-Host "Using Windows source archive: $archive"
           $sourceRoot = Join-Path $env:RUNNER_TEMP "moodpress-windows-source"
+          $androidRoot = Join-Path $env:RUNNER_TEMP "moodpress-android-current"
           New-Item -ItemType Directory -Force -Path $sourceRoot | Out-Null
+          New-Item -ItemType Directory -Force -Path $androidRoot | Out-Null
           Expand-Archive -LiteralPath $archive -DestinationPath $sourceRoot -Force
+          Expand-Archive -LiteralPath (Join-Path $env:GITHUB_WORKSPACE "MoodPress-Android-compleet-2.5.2.zip") -DestinationPath $androidRoot -Force
+          python scripts/apply-cloud-platform.py --target windows --source-root $sourceRoot --android-source-root $androidRoot --repo-root $env:GITHUB_WORKSPACE
+          if ($LASTEXITCODE -ne 0) { throw "Could not apply the shared encrypted cloud-sync/portal client to the Windows source." }
           $projectRoot = Join-Path $sourceRoot "MoodPress-Windows-source-2.3.0"
           $appProject = Join-Path $projectRoot "MoodPress.WindowsApp\MoodPress.WindowsApp.csproj"
           $testsProject = Join-Path $projectRoot "MijnGevoel.Tests\MijnGevoel.Tests.csproj"
@@ -95,6 +105,7 @@ jobs:
             -p:WindowsPackageType=None `
             -p:WindowsAppSDKSelfContained=true `
             -p:PublishSingleFile=false `
+            -p:NoWarn=MSB3277 `
             --output "$publishDir"
           if ($LASTEXITCODE -ne 0) { throw "MoodPress Windows publish failed." }
           if (!(Test-Path (Join-Path $publishDir "MoodPress.exe"))) { throw "MoodPress.exe was not produced." }

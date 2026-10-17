@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>MoodPress — veilige ondersteunersportal</title>
+  <link rel="stylesheet" href="/portal.css">
+  <script src="/portal.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="brand-mark" aria-hidden="true">M</div>
+    <div><h1>MoodPress</h1><p>Veilige ondersteunersportal</p></div>
+  </header>
+  <main>
+    <p class="notice">De cloud bewaart je MoodPress-back-up als ondoorzichtig bestand. Gedeelde notities zijn in deze browser versleuteld en worden alleen aan accounts met de juiste rol getoond.</p>
+    <p id="message" role="status" aria-live="polite" class="status"></p>
+    <section id="auth-section" class="panel">
+      <h2>Inloggen of account maken</h2>
+      <label for="email">E-mailadres</label><input id="email" type="email" autocomplete="email" maxlength="254" required>
+      <label for="display-name">Naam (alleen bij account maken)</label><input id="display-name" autocomplete="name" maxlength="100">
+      <label for="password">Wachtwoord (minimaal 12 tekens)</label><input id="password" type="password" autocomplete="current-password" minlength="12" maxlength="256" required>
+      <div class="actions"><button id="login-button">Inloggen</button><button id="register-button" class="secondary">Account maken</button></div>
+      <p class="hint">Gebruik een uniek sterk wachtwoord. E-mailbevestiging en e-mailherstel moeten nog worden geconfigureerd voordat dit een openbare zorgportal wordt.</p>
+    </section>
+    <section id="app-section" hidden>
+      <section class="panel">
+        <div class="row-between"><div><h2 id="welcome">Mijn MoodPress</h2><p id="account-label" class="hint"></p></div><button id="logout-button" class="secondary">Uitloggen</button></div>
+        <label for="workspace-select">Werkruimte</label><select id="workspace-select"></select>
+        <p id="role-label" class="hint"></p>
+      </section>
+      <section class="panel">
+        <h2>Uitnodiging accepteren</h2>
+        <p class="hint">Plak de persoonlijke code die je cliënt heeft gedeeld. De code is eenmalig en verloopt na maximaal zeven dagen.</p>
+        <label for="invite-code">Uitnodigingscode</label><input id="invite-code" autocomplete="off" maxlength="128">
+        <button id="accept-invite-button">Uitnodiging accepteren</button>
+      </section>
+      <section id="owner-section" class="panel" hidden>
+        <h2>Ouders, voogden en begeleiders</h2>
+        <label for="invite-email">E-mailadres van de persoon</label><input id="invite-email" type="email" maxlength="254">
+        <label for="invite-role">Rol</label><select id="invite-role"><option value="begeleider">Begeleider</option><option value="ouder_voogd">Ouder / voogd</option></select>
+        <fieldset><legend>Welke categorieën mag deze persoon zien?</legend>
+          <label class="check"><input type="checkbox" value="gevoel" checked> Gevoel</label>
+          <label class="check"><input type="checkbox" value="agenda" checked> Agenda</label>
+          <label class="check"><input type="checkbox" value="routine"> Stappenplannen</label>
+          <label class="check"><input type="checkbox" value="welzijn"> Welzijn</label>
+          <label class="check"><input type="checkbox" value="helpkaart" checked> Helpkaart</label>
+          <label class="check"><input type="checkbox" value="weekrooster"> Weekrooster</label>
+          <label class="check"><input type="checkbox" value="communicatie"> Communicatie</label>
+        </fieldset>
+        <button id="create-invite-button">Uitnodiging maken</button>
+        <div id="invitation-result" class="result" hidden></div>
+        <h3>Gekoppelde personen</h3><div id="members-list" class="stack"></div>
+      </section>
+      <section class="panel">
+        <h2>Versleutelde gedeelde informatie</h2>
+        <p class="hint">De deelsleutel wordt niet naar MoodPress verstuurd of op de server opgeslagen. Deel hem via een ander, veilig kanaal met de bedoelde persoon. Wie de sleutel al heeft, kan eerder opgehaalde informatie mogelijk blijven lezen, ook na intrekking van toegang.</p>
+        <label for="share-key">Deelsleutel (Base64)</label><input id="share-key" autocomplete="off" spellcheck="false">
+        <div class="actions"><button id="generate-key-button" class="secondary">Nieuwe deelsleutel maken</button><button id="copy-key-button" class="secondary">Sleutel kopiëren</button></div>
+        <div id="create-share-panel" hidden>
+          <h3>Informatie bewust delen</h3>
+          <label for="share-category">Categorie</label><select id="share-category"><option value="gevoel">Gevoel</option><option value="agenda">Agenda</option><option value="routine">Stappenplan</option><option value="welzijn">Welzijn</option><option value="helpkaart">Helpkaart</option><option value="weekrooster">Weekrooster</option><option value="communicatie">Communicatie</option></select>
+          <label for="share-title">Titel</label><input id="share-title" maxlength="120">
+          <label for="share-body">Wat wil je delen?</label><textarea id="share-body" rows="4" maxlength="10000"></textarea>
+          <button id="create-share-button">Versleutelen en delen</button>
+        </div>
+        <h3>Gedeelde informatie</h3><div id="shares-list" class="stack"></div>
+      </section>
+      <section class="panel">
+        <h2>Voorstellen en overdracht</h2>
+        <div id="create-suggestion-panel" hidden>
+          <p class="hint">Je kunt een voorstel doen binnen een categorie waarvoor je toestemming hebt. De cliënt houdt de regie en beslist of het voorstel wordt geaccepteerd.</p>
+          <label for="suggestion-category">Categorie</label><select id="suggestion-category"><option value="agenda">Agenda</option><option value="routine">Stappenplan</option><option value="welzijn">Welzijn</option><option value="helpkaart">Helpkaart</option><option value="weekrooster">Weekrooster</option><option value="communicatie">Communicatie</option><option value="gevoel">Gevoel</option></select>
+          <label for="suggestion-title">Titel</label><input id="suggestion-title" maxlength="120">
+          <label for="suggestion-body">Voorstel</label><textarea id="suggestion-body" rows="3" maxlength="5000"></textarea>
+          <button id="send-suggestion-button">Voorstel versleuteld versturen</button>
+        </div>
+        <div id="suggestions-list" class="stack"></div>
+      </section>
+      <section class="panel">
+        <h2>Cloud-back-up</h2>
+        <p class="hint">De app stuurt een versleuteld MoodPress-back-uparchief naar deze dienst. Versiecontrole voorkomt stil overschrijven; bij gelijktijdige wijzigingen wordt een conflict gemeld. Gebruik op dit moment de Android-app om de lokale kluis met de cloud te synchroniseren.</p>
+        <p id="sync-status">Back-upstatus wordt geladen.</p>
+      </section>
+    </section>
+    <footer><p>Bewaar geen noodinformatie uitsluitend in deze portal. MoodPress is geen noodmeldingssysteem. Bij direct gevaar bel je 112.</p></footer>
+  </main>
+</body>
+</html>

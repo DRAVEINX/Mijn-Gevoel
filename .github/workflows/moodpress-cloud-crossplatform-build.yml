@@ -1,0 +1,291 @@
+name: MoodPress cloud sync — Android, Windows and iOS checks
+
+on:
+  push:
+    branches:
+      - moodpress-cloud-portal-crossplatform
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: moodpress-cloud-platforms-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  windows-client:
+    name: Patch, test and build Windows app
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v7
+
+      - name: Install .NET SDKs
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - name: Extract Windows source archive
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $root = Join-Path $env:RUNNER_TEMP "moodpress-windows-source"
+          $androidRoot = Join-Path $env:RUNNER_TEMP "moodpress-android-current"
+          New-Item -ItemType Directory -Force -Path $root | Out-Null
+          New-Item -ItemType Directory -Force -Path $androidRoot | Out-Null
+          Expand-Archive -LiteralPath (Join-Path $env:GITHUB_WORKSPACE "MoodPress-Windows-source-2.3.0.zip") -DestinationPath $root -Force
+          Expand-Archive -LiteralPath (Join-Path $env:GITHUB_WORKSPACE "MoodPress-Android-compleet-2.5.2.zip") -DestinationPath $androidRoot -Force
+          python scripts/apply-cloud-platform.py --target windows --source-root $root --android-source-root $androidRoot --repo-root $env:GITHUB_WORKSPACE
+          $projectRoot = Join-Path $root "MoodPress-Windows-source-2.3.0"
+          if (!(Test-Path $projectRoot)) { throw "Windows source project root is missing: $projectRoot" }
+          "MOODPRESS_WINDOWS_ROOT=$projectRoot" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Install MAUI Windows workload
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          dotnet workload install maui-windows
+          if ($LASTEXITCODE -ne 0) { throw "MAUI Windows workload installation failed." }
+
+      - name: Restore and run Core/security tests
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          dotnet test "$env:MOODPRESS_WINDOWS_ROOT\MijnGevoel.Tests\MijnGevoel.Tests.csproj" --configuration Release --warnaserror --logger "console;verbosity=normal"
+          if ($LASTEXITCODE -ne 0) { throw "Windows source Core/security tests failed." }
+
+      - name: Restore and build Windows app with warnings as errors
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $project = Join-Path $env:MOODPRESS_WINDOWS_ROOT "MoodPress.WindowsApp\MoodPress.WindowsApp.csproj"
+          dotnet restore $project
+          if ($LASTEXITCODE -ne 0) { throw "Windows app restore failed." }
+          dotnet build $project --configuration Release --framework net10.0-windows10.0.19041.0 -p:RuntimeIdentifierOverride=win-x64 -p:NoWarn=MSB3277 --warnaserror
+          if ($LASTEXITCODE -ne 0) { throw "Windows cloud-sync app build failed." }
+
+      # MSB3277 is narrowly suppressed because the .NET 8 Core/QRCoder dependency is unified to the explicit .NET 10 System.Drawing.Common reference in the Windows app. All other warnings remain errors.
+      - name: Publish Windows app
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $project = Join-Path $env:MOODPRESS_WINDOWS_ROOT "MoodPress.WindowsApp\MoodPress.WindowsApp.csproj"
+          $out = Join-Path $env:RUNNER_TEMP "moodpress-windows-cloud-publish"
+          dotnet publish $project --configuration Release --framework net10.0-windows10.0.19041.0 -p:RuntimeIdentifierOverride=win-x64 --self-contained true -p:WindowsPackageType=None -p:WindowsAppSDKSelfContained=true -p:NoWarn=MSB3277 --warnaserror --output $out
+          if ($LASTEXITCODE -ne 0) { throw "Windows cloud-sync publish failed." }
+          if (!(Test-Path (Join-Path $out "MoodPress.exe"))) { throw "MoodPress.exe was not produced." }
+          $count = @(Get-ChildItem $out -Recurse -File).Count
+          if ($count -lt 10) { throw "Windows publish is incomplete: only $count files found." }
+          Compress-Archive -Path (Join-Path $out "*") -DestinationPath (Join-Path $env:GITHUB_WORKSPACE "MoodPress-Windows-CloudSync-Preview.zip") -Force
+
+      - name: Upload Windows preview build
+        uses: actions/upload-artifact@v7
+        with:
+          name: MoodPress-Windows-CloudSync-Preview
+          path: MoodPress-Windows-CloudSync-Preview.zip
+          if-no-files-found: error
+          retention-days: 14
+
+  ios-client:
+    name: Patch, test and build iOS simulator app
+    runs-on: xcode-27
+    timeout-minutes: 90
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v7
+
+      - name: Install .NET SDKs
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.401
+
+      - name: Check Xcode version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(xcodebuild -version)"
+          printf '%s\n' "$version"
+          printf '%s\n' "$version" | grep -q 'Xcode 27.0'
+
+      - name: Extract iOS source archive and apply cloud client
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/moodpress-ios-source"
+          android_root="$RUNNER_TEMP/moodpress-android-current"
+          mkdir -p "$root" "$android_root"
+          unzip -t MoodPress-iOS-compleet-2.3.2.zip
+          unzip -q MoodPress-iOS-compleet-2.3.2.zip -d "$root"
+          unzip -t MoodPress-Android-compleet-2.5.2.zip
+          unzip -q MoodPress-Android-compleet-2.5.2.zip -d "$android_root"
+          python3 scripts/apply-cloud-platform.py --target ios --source-root "$root" --android-source-root "$android_root" --repo-root "$GITHUB_WORKSPACE"
+          project="$root/MijnGevoel-Android/MijnGevoel.Android/MoodPress.iOS.csproj"
+          test -f "$project"
+          echo "MOODPRESS_IOS_ROOT=$root/MijnGevoel-Android" >> "$GITHUB_ENV"
+          echo "MOODPRESS_IOS_PROJECT=$project" >> "$GITHUB_ENV"
+
+      - name: Install MAUI workload
+        run: dotnet workload install maui --version 10.0.401.1
+
+      - name: Run Core/security tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet test "$MOODPRESS_IOS_ROOT/MijnGevoel.Tests/MijnGevoel.Tests.csproj" --configuration Release --warnaserror --logger "console;verbosity=normal"
+
+      - name: Restore iOS project
+        shell: bash
+        run: dotnet restore "$MOODPRESS_IOS_PROJECT"
+
+      - name: Build iOS simulator app with warnings as errors
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$MOODPRESS_IOS_ROOT/MijnGevoel.Android"
+          if [[ "$(uname -m)" == "arm64" ]]; then RID=iossimulator-arm64; else RID=iossimulator-x64; fi
+          dotnet build MoodPress.iOS.csproj --configuration Debug --framework net10.0-ios -p:RuntimeIdentifier="$RID" -p:EnableCodeSigning=false --warnaserror
+          mkdir -p "$GITHUB_WORKSPACE/artifacts/ios"
+          app="$(find bin-ios/Debug/net10.0-ios -type d -name '*.app' -print -quit)"
+          test -n "$app" || { echo "No iOS Simulator app bundle was produced." >&2; exit 1; }
+          ditto "$app" "$GITHUB_WORKSPACE/artifacts/ios/MoodPress-iOS-CloudSync-Preview.app"
+          ditto -c -k --sequesterRsrc --keepParent "$GITHUB_WORKSPACE/artifacts/ios/MoodPress-iOS-CloudSync-Preview.app" "$GITHUB_WORKSPACE/artifacts/ios/MoodPress-iOS-CloudSync-Preview.zip"
+          shasum -a 256 "$GITHUB_WORKSPACE/artifacts/ios/MoodPress-iOS-CloudSync-Preview.zip" > "$GITHUB_WORKSPACE/artifacts/ios/SHA256SUMS.txt"
+
+      - name: Upload iOS simulator preview build
+        uses: actions/upload-artifact@v7
+        with:
+          name: MoodPress-iOS-CloudSync-Simulator-Preview
+          path: artifacts/ios/*
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Check iPhone release signing configuration
+        id: ios_signing
+        shell: bash
+        env:
+          IOS_CERTIFICATE_P12_BASE64: ${{ secrets.IOS_CERTIFICATE_P12_BASE64 }}
+          IOS_CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
+          IOS_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
+          IOS_CODESIGN_KEY: ${{ secrets.IOS_CODESIGN_KEY }}
+          IOS_TEAM_ID: ${{ secrets.IOS_TEAM_ID }}
+        run: |
+          if [[ -n "${IOS_CERTIFICATE_P12_BASE64:-}" && -n "${IOS_CERTIFICATE_PASSWORD:-}" && -n "${IOS_PROVISIONING_PROFILE_BASE64:-}" && -n "${IOS_CODESIGN_KEY:-}" && -n "${IOS_TEAM_ID:-}" ]]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+            echo "iPhone distribution-signing configuration is present."
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "Signed iPhone IPA is unavailable until all documented signing secrets are configured."
+          fi
+
+      - name: Prepare temporary iPhone signing identity
+        if: steps.ios_signing.outputs.ready == 'true'
+        shell: bash
+        env:
+          IOS_CERTIFICATE_P12_BASE64: ${{ secrets.IOS_CERTIFICATE_P12_BASE64 }}
+          IOS_CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
+          IOS_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
+        run: |
+          set -euo pipefail
+          keychain="$RUNNER_TEMP/moodpress-release.keychain-db"
+          keychain_password="$(openssl rand -hex 24)"
+          printf '%s' "$IOS_CERTIFICATE_P12_BASE64" | base64 --decode > "$RUNNER_TEMP/moodpress-distribution.p12"
+          printf '%s' "$IOS_PROVISIONING_PROFILE_BASE64" | base64 --decode > "$RUNNER_TEMP/moodpress-profile.mobileprovision"
+          test -s "$RUNNER_TEMP/moodpress-distribution.p12"
+          test -s "$RUNNER_TEMP/moodpress-profile.mobileprovision"
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security import "$RUNNER_TEMP/moodpress-distribution.p12" -P "$IOS_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$keychain"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$keychain_password" "$keychain"
+          security list-keychain -d user -s "$keychain"
+          security cms -D -i "$RUNNER_TEMP/moodpress-profile.mobileprovision" > "$RUNNER_TEMP/moodpress-profile.plist"
+          profile_uuid=$(/usr/libexec/PlistBuddy -c 'Print :UUID' "$RUNNER_TEMP/moodpress-profile.plist")
+          test -n "$profile_uuid"
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+          cp "$RUNNER_TEMP/moodpress-profile.mobileprovision" "$HOME/Library/MobileDevice/Provisioning Profiles/$profile_uuid.mobileprovision"
+          echo "MOODPRESS_IOS_KEYCHAIN=$keychain" >> "$GITHUB_ENV"
+          echo "MOODPRESS_IOS_KEYCHAIN_PASSWORD=$keychain_password" >> "$GITHUB_ENV"
+          echo "MOODPRESS_IOS_PROFILE_UUID=$profile_uuid" >> "$GITHUB_ENV"
+
+      - name: Publish signed iPhone IPA
+        if: steps.ios_signing.outputs.ready == 'true'
+        shell: bash
+        env:
+          IOS_CODESIGN_KEY: ${{ secrets.IOS_CODESIGN_KEY }}
+          IOS_TEAM_ID: ${{ secrets.IOS_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          app="$MOODPRESS_IOS_ROOT/MijnGevoel.Android"
+          out="$RUNNER_TEMP/moodpress-iphone-release"
+          rm -rf "$out"
+          mkdir -p "$out"
+          dotnet publish "$app/MoodPress.iOS.csproj" \
+            --configuration Release \
+            --framework net10.0-ios \
+            -p:RuntimeIdentifier=ios-arm64 \
+            -p:EnableCodeSigning=true \
+            -p:BuildIpa=true \
+            "-p:CodesignKey=$IOS_CODESIGN_KEY" \
+            "-p:CodesignProvision=$MOODPRESS_IOS_PROFILE_UUID" \
+            "-p:CodesignTeamId=$IOS_TEAM_ID" \
+            -p:ApplicationDisplayVersion=4.0.0 \
+            -p:ApplicationVersion=40 \
+            --output "$out"
+          ipa="$(find "$out" "$app/bin/Release/net10.0-ios" -type f -name '*.ipa' -print -quit)"
+          test -n "$ipa" && test -f "$ipa" || { echo "Signed .ipa was not produced. Check that the certificate, provisioning profile, bundle identifier and team match." >&2; find "$out" "$app/bin/Release/net10.0-ios" -maxdepth 5 -type f -print || true; exit 1; }
+          mkdir -p "$GITHUB_WORKSPACE/artifacts/ios-device"
+          cp "$ipa" "$GITHUB_WORKSPACE/artifacts/ios-device/MoodPress-4.0.0-iPhone-Signed.ipa"
+          shasum -a 256 "$GITHUB_WORKSPACE/artifacts/ios-device/MoodPress-4.0.0-iPhone-Signed.ipa" | tee "$GITHUB_WORKSPACE/artifacts/ios-device/SHA256SUMS.txt"
+          ls -lh "$GITHUB_WORKSPACE/artifacts/ios-device"
+
+      - name: Upload signed iPhone release
+        if: steps.ios_signing.outputs.ready == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: MoodPress-4.0.0-iPhone-Signed-IPA
+          path: artifacts/ios-device/*
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Record missing iPhone signing prerequisites
+        if: steps.ios_signing.outputs.ready != 'true'
+        shell: bash
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/artifacts/ios-device-status"
+          cat > "$GITHUB_WORKSPACE/artifacts/ios-device-status/IOS-RELEASE-STATUS.txt" <<'EOF'
+          This build produced the iOS simulator preview only. It did not produce a signed installable iPhone IPA because one or more distribution-signing secrets are missing.
+          Configure these GitHub Actions secrets in repository Settings > Secrets and variables > Actions:
+          IOS_CERTIFICATE_P12_BASE64
+          IOS_CERTIFICATE_PASSWORD
+          IOS_PROVISIONING_PROFILE_BASE64
+          IOS_CODESIGN_KEY
+          IOS_TEAM_ID
+          The certificate, provisioning profile, bundle identifier and Apple team must match.
+          EOF
+
+      - name: Upload iPhone signing status
+        if: steps.ios_signing.outputs.ready != 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: MoodPress-iPhone-Release-Signing-Status
+          path: artifacts/ios-device-status/IOS-RELEASE-STATUS.txt
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Remove temporary iPhone signing material
+        if: always() && steps.ios_signing.outputs.ready == 'true'
+        shell: bash
+        run: |
+          if [[ -n "${MOODPRESS_IOS_KEYCHAIN:-}" ]]; then
+            security delete-keychain "$MOODPRESS_IOS_KEYCHAIN" || true
+          fi
+          rm -f "$RUNNER_TEMP/moodpress-distribution.p12" "$RUNNER_TEMP/moodpress-profile.mobileprovision" "$RUNNER_TEMP/moodpress-profile.plist"
+          if [[ -n "${MOODPRESS_IOS_PROFILE_UUID:-}" ]]; then
+            rm -f "$HOME/Library/MobileDevice/Provisioning Profiles/$MOODPRESS_IOS_PROFILE_UUID.mobileprovision"
+          fi
