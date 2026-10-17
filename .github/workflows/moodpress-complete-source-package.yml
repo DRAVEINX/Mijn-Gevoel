@@ -1,0 +1,120 @@
+name: MoodPress 4.0.1 — complete source and workflow ZIP
+
+on:
+  push:
+    branches:
+      - moodpress-complete-package
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: Assemble complete patched source and workflows
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout MoodPress repository
+        uses: actions/checkout@v4
+
+      - name: Validate source package inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s MoodPress-Android-compleet-2.5.2.zip
+          test -s MoodPress-Android-Tablet-2.5.2.zip
+          test -s MoodPress-4.0.1-github.patch
+          test -s scripts/fix-moodpress-feature-directory.py
+          test -s .github/workflows/moodpress-4-android.yml
+          unzip -t MoodPress-Android-compleet-2.5.2.zip >/dev/null
+          unzip -t MoodPress-Android-Tablet-2.5.2.zip >/dev/null
+
+      - name: Restore and patch the full Android source
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p source
+          unzip -q MoodPress-Android-compleet-2.5.2.zip -d source
+          test -d source/MijnGevoel-Android
+          patch --batch --forward -p1 -d source/MijnGevoel-Android < MoodPress-4.0.1-github.patch
+          python3 scripts/fix-moodpress-feature-directory.py source/MijnGevoel-Android
+          cd source/MijnGevoel-Android
+          bash scripts/check-moodpress-4.sh
+          grep -q '<ApplicationDisplayVersion>4.0.1</ApplicationDisplayVersion>' MijnGevoel.Android/MijnGevoel.Android.csproj
+          grep -q '<ApplicationVersion>36</ApplicationVersion>' MijnGevoel.Android/MijnGevoel.Android.csproj
+          if find . -name '*.rej' -print -quit | grep -q .; then
+            echo "Patch reject files were found; refusing to package incomplete source." >&2
+            find . -name '*.rej' -print
+            exit 1
+          fi
+
+      - name: Assemble repository workflows, platform services, documentation and patched source
+        shell: bash
+        run: |
+          set -euo pipefail
+          package="$GITHUB_WORKSPACE/MoodPress-4.0.1-Complete-Source-Workflow"
+          mkdir -p "$package/repository" "$package/source"
+
+          # Keep all current CI/CD workflows, service code, deployment files, docs and helper scripts.
+          cp -a .github cloud deploy docs platform-port scripts "$package/repository/"
+          cp -a \
+            MoodPress-Android-compleet-2.5.2.zip \
+            MoodPress-Android-Tablet-2.5.2.zip \
+            MoodPress-4.0.0-github.patch \
+            MoodPress-4.0.1-github.patch \
+            README.md README-EERSTE-STAP-2.5.2.txt RELEASE-NOTES-2.5.2.md SHA256SUMS-2.5.2.txt \
+            "$package/repository/"
+
+          # This is the complete Android source tree after the same patch and fixup used in CI.
+          cp -a source/MijnGevoel-Android "$package/source/MijnGevoel-Android"
+
+          cat > "$package/LEES-DIT-EERST-NL.md" <<'EOF'
+          # MoodPress 4.0.1 — compleet broncode- en workflowpakket
+
+          Dit pakket bevat de volledige Android-broncode die door de 4.0.1-workflow is opgebouwd,
+          de originele 2.5.2-basisarchieven die de workflow gebruikt, de 4.0.1-patch, herstel- en
+          contro scripts, alle huidige GitHub Actions-workflows, cloudportaal-/deploybestanden,
+          platform-porthelpers en de projectdocumentatie.
+
+          ## Mappen
+
+          - `source/MijnGevoel-Android/`: volledige gepatchte Android-projectmap voor telefoon en tablet.
+          - `repository/.github/workflows/`: Android-, tablet-, Windows-, iOS- en cloudportaalworkflows.
+          - `repository/MoodPress-4.0.1-github.patch`: de releasepatch die op de basisbroncode wordt toegepast.
+          - `repository/scripts/`: herstelscripts, platformintegratie en smoke checks.
+          - `repository/cloud/` en `repository/deploy/`: cloudportaal-API en deploymentbestanden.
+          - `repository/docs/` en `repository/platform-port/`: architectuur, uitleg en gedeelde platformhelpers.
+
+          ## Android-build via GitHub Actions
+
+          1. Bewaar of upload de inhoud van de map `repository/` naar de hoofdmap van je GitHub-repository.
+          2. Laat `MoodPress-Android-compleet-2.5.2.zip`, `MoodPress-Android-Tablet-2.5.2.zip`
+             en `MoodPress-4.0.1-github.patch` in die hoofdmap staan.
+          3. Open Actions en kies `MoodPress 4.0 Android — telefoon en tablet`.
+          4. De workflow herstelt de basisbroncode, past de patch en herstelstap toe, voert statische
+             controles en automatische tests uit en bouwt APK + AAB voor telefoon én tablet.
+          5. Voor ondertekende releases zijn de GitHub Secrets `ANDROID_KEYSTORE_BASE64`,
+             `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_PASSWORD` en `ANDROID_KEY_ALIAS` nodig.
+
+          ## Belangrijk
+
+          - De workflow- en broncodebestanden zijn opgenomen; geheime ondertekeningssleutels en
+            wachtwoorden zijn bewust niet opgenomen.
+          - De vier gebouwde 4.0.1-releasebestanden worden als aparte GitHub Actions-artifact
+            gepubliceerd. Ze kunnen naast dit broncodepakket worden bewaard.
+          - Voer geen oude release-workflow uit die versie 2.5.2 bouwt wanneer je de 4.0.1-release wilt maken.
+          EOF
+
+          # A reproducible inventory/checksum list makes it easier to verify a saved copy.
+          (cd "$package" && find . -type f ! -name SHA256SUMS-SOURCE.txt -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS-SOURCE.txt)
+          zip -qr "$GITHUB_WORKSPACE/MoodPress-4.0.1-Complete-Source-Workflow.zip" "$(basename "$package")"
+          unzip -t "$GITHUB_WORKSPACE/MoodPress-4.0.1-Complete-Source-Workflow.zip" | tail -n 2
+          ls -lh "$GITHUB_WORKSPACE/MoodPress-4.0.1-Complete-Source-Workflow.zip"
+
+      - name: Upload complete source and workflow ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: MoodPress-4.0.1-Complete-Source-Workflow
+          path: MoodPress-4.0.1-Complete-Source-Workflow.zip
+          if-no-files-found: error
+          retention-days: 30
