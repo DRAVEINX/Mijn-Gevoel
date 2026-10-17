@@ -52,7 +52,7 @@ search_helper = r'''
             return true;
 
         // Voice notes are part of the diary/free-writing screen, so expose them under their own search terms.
-        return item.Kind is FeatureKind.Journal or FeatureKind.Notes && IsVoiceSearch(query);
+        return (item.Kind is FeatureKind.Journal or FeatureKind.Notes) && IsVoiceSearch(query);
     }
 
 '''
