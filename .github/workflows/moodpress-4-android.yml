@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: moodpress-4-android-feature-directory-${{ github.ref }}
+  group: moodpress-4-android-${{ github.ref }}-${{ github.sha }}
   cancel-in-progress: false
 
 jobs:
