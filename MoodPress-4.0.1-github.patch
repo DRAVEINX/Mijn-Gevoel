@@ -42,7 +42,7 @@ diff -ruN moodpress_base_flat/.github/workflows/moodpress-4-android.yml moodpres
 +          grep -q '<ApplicationVersion>36</ApplicationVersion>' "$project"
 +          grep -q 'MoodPressTarget' "$project"
 +          grep -q 'nl.mijngevoel.app.tablet' "$project"
-+          grep -q 'Plugin.Maui.Audio" Version="4.0.1"' "$project"
++          grep -q 'Plugin.Maui.Audio" Version="4.0.0"' "$project"
 +          grep -q 'CommunityToolkit.Maui" Version="15.0.1"' "$project"
 +
 +      - name: Statische controles voor MoodPress 4.0
@@ -1809,7 +1809,7 @@ diff -ruN moodpress_base_flat/MijnGevoel.Android/MijnGevoel.Android.csproj moodp
      <PackageReference Include="Microsoft.Maui.Controls" Version="10.0.110" />
 +    <PackageReference Include="CommunityToolkit.Maui" Version="15.0.1" />
      <PackageReference Include="Xamarin.AndroidX.Biometric" Version="1.1.0.33" />
-     <PackageReference Include="Plugin.Maui.Audio" Version="4.0.1" />
+     <PackageReference Include="Plugin.Maui.Audio" Version="4.0.0" />
      <!-- Keep AndroidX KTX packages aligned with the MAUI 10 transitive package versions to avoid NU1608 mismatches. -->
 diff -ruN moodpress_base_flat/MijnGevoel.Android/Platforms/Android/MoodPressWidgetProvider.cs moodpress4_build/MijnGevoel.Android/Platforms/Android/MoodPressWidgetProvider.cs
 --- moodpress_base_flat/MijnGevoel.Android/Platforms/Android/MoodPressWidgetProvider.cs	1970-01-01 00:00:00.000000000 +0000
