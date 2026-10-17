@@ -5,6 +5,7 @@ on:
     branches:
       - moodpress-4.0-build
       - moodpress-cloud-portal-crossplatform
+      - moodpress-complete-package
   workflow_dispatch:
 
 permissions:
